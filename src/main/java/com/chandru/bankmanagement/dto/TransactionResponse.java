@@ -8,6 +8,7 @@ public class TransactionResponse {
     private String transactionType;
     private Double amount;
     private LocalDateTime transactionDate;
+    private String accountNumber;
 
     public TransactionResponse() {
     }
@@ -15,12 +16,14 @@ public class TransactionResponse {
     public TransactionResponse(Long transactionId,
                                String transactionType,
                                Double amount,
-                               LocalDateTime transactionDate) {
+                               LocalDateTime transactionDate,
+                               String accountNumber) {
 
         this.transactionId = transactionId;
         this.transactionType = transactionType;
         this.amount = amount;
         this.transactionDate = transactionDate;
+        this.accountNumber = accountNumber;
     }
 
     public Long getTransactionId() {
@@ -53,5 +56,13 @@ public class TransactionResponse {
 
     public void setTransactionDate(LocalDateTime transactionDate) {
         this.transactionDate = transactionDate;
+    }
+
+    public String getAccountNumber() {
+        return accountNumber;
+    }
+
+    public void setAccountNumber(String accountNumber) {
+        this.accountNumber = accountNumber;
     }
 }
