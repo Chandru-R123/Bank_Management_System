@@ -2,10 +2,12 @@ package com.chandru.bankmanagement.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.validation.FieldError;
+
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -13,67 +15,78 @@ import java.util.Map;
 @ControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler({
-            CustomerNotFoundException.class,
-            AccountNotFoundException.class
-    })
+    // ── 404 ────────────────────────────────────────────────────────────
+
+    @ExceptionHandler({CustomerNotFoundException.class, AccountNotFoundException.class})
     public ResponseEntity<Map<String, Object>> handleNotFound(RuntimeException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.NOT_FOUND.value());
-        error.put("message", ex.getMessage());
-
-        return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
+        return errorResponse(HttpStatus.NOT_FOUND, ex.getMessage());
     }
+
+    // ── 400 ────────────────────────────────────────────────────────────
+
     @ExceptionHandler(DuplicateEmailException.class)
     public ResponseEntity<Map<String, Object>> handleDuplicateEmail(
             DuplicateEmailException ex) {
-
-        Map<String, Object> error = new HashMap<>();
-
-        error.put("timestamp", LocalDateTime.now());
-        error.put("status", HttpStatus.BAD_REQUEST.value());
-        error.put("message", ex.getMessage());
-
-        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+        return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalArgument(
+            IllegalArgumentException ex) {
+        return errorResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> handleValidationException(
+    public ResponseEntity<Map<String, Object>> handleValidation(
             MethodArgumentNotValidException ex) {
 
-        Map<String, String> errors = new HashMap<>();
-
-        ex.getBindingResult().getAllErrors().forEach(error -> {
-
-            String fieldName = ((FieldError) error).getField();
-            String message = error.getDefaultMessage();
-
-            errors.put(fieldName, message);
+        Map<String, String> fieldErrors = new HashMap<>();
+        ex.getBindingResult().getAllErrors().forEach(err -> {
+            String field   = ((FieldError) err).getField();
+            String message = err.getDefaultMessage();
+            fieldErrors.put(field, message);
         });
 
-        Map<String, Object> response = new HashMap<>();
-
-        response.put("timestamp", LocalDateTime.now());
-        response.put("status", HttpStatus.BAD_REQUEST.value());
-        response.put("errors", errors);
-
-        return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.BAD_REQUEST.value());
+        body.put("errors", fieldErrors);
+        return new ResponseEntity<>(body, HttpStatus.BAD_REQUEST);
     }
+
+    // ── 403 — Spring Security AccessDeniedException (@PreAuthorize) ────
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(
+            AccessDeniedException ex) {
+        return errorResponse(HttpStatus.FORBIDDEN,
+                "You do not have permission to access this resource");
+    }
+
+    // ── 403 — application-level UnauthorizedAccessException ────────────
+
     @ExceptionHandler(UnauthorizedAccessException.class)
-    public ResponseEntity<Map<String, Object>> handleUnauthorizedAccess(
+    public ResponseEntity<Map<String, Object>> handleUnauthorized(
             UnauthorizedAccessException ex) {
-
-        Map<String, Object> response = new HashMap<>();
-
-        response.put("error", "Forbidden");
-        response.put("message", ex.getMessage());
-        response.put("status", 403);
-
-        return ResponseEntity
-                .status(HttpStatus.FORBIDDEN)
-                .body(response);
+        return errorResponse(HttpStatus.FORBIDDEN, ex.getMessage());
     }
 
+    // ── generic ────────────────────────────────────────────────────────
+
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<Map<String, Object>> handleGeneric(RuntimeException ex) {
+        return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, ex.getMessage());
+    }
+
+    // ── helper ─────────────────────────────────────────────────────────
+
+    private ResponseEntity<Map<String, Object>> errorResponse(
+            HttpStatus status, String message) {
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", status.value());
+        body.put("message", message);
+        return new ResponseEntity<>(body, status);
+    }
 }

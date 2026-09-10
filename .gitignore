@@ -1,33 +1,31 @@
-HELP.md
+# ── Java / Maven ──────────────────────────────────────────────────────
 target/
+*.class
+*.jar
+*.war
+*.ear
 .mvn/wrapper/maven-wrapper.jar
-!**/src/main/**/target/
-!**/src/test/**/target/
 
-### STS ###
-.apt_generated
-.classpath
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
+# ── Spring Boot ────────────────────────────────────────────────────────
+application-local.properties
+application-secret.properties
 
-### IntelliJ IDEA ###
-.idea
-*.iws
+# ── IDE ────────────────────────────────────────────────────────────────
+.idea/
 *.iml
-*.ipr
-
-### NetBeans ###
-/nbproject/private/
-/nbbuild/
-/dist/
-/nbdist/
-/.nb-gradle/
-build/
-!**/src/main/**/build/
-!**/src/test/**/build/
-
-### VS Code ###
 .vscode/
+*.code-workspace
+
+# ── Node / Vite (frontend) ─────────────────────────────────────────────
+bank-management-frontend/node_modules/
+bank-management-frontend/dist/
+bank-management-frontend/.vite/
+
+# ── OS ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Secrets — never commit these ──────────────────────────────────────
+*.env
+.env
+.env.*

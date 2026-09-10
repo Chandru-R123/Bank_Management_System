@@ -1,0 +1,153 @@
+### ============================================================
+### BANK MANAGEMENT - SEED DATA
+### Run these requests in order using REST Client (VS Code)
+### or paste into Postman / curl
+### ============================================================
+
+### 1. Register ADMIN user
+POST http://localhost:8080/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "Admin@123",
+  "role": "ADMIN",
+  "customerId": null
+}
+
+###
+
+### 2. Login as ADMIN (copy the token for requests below)
+POST http://localhost:8080/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "Admin@123"
+}
+
+###
+### ---- Paste your token below replacing <TOKEN> ----
+
+### 3. Create Customer 1 - Rahul Sharma
+POST http://localhost:8080/api/customers
+Content-Type: application/json
+Authorization: Bearer <TOKEN>
+
+{
+  "name": "Rahul Sharma",
+  "email": "rahul.sharma@email.com",
+  "phone": "9876543210",
+  "address": "12 Anna Nagar, Chennai, Tamil Nadu"
+}
+
+###
+
+### 4. Create Customer 2 - Priya Venkat
+POST http://localhost:8080/api/customers
+Content-Type: application/json
+Authorization: Bearer <TOKEN>
+
+{
+  "name": "Priya Venkat",
+  "email": "priya.venkat@email.com",
+  "phone": "9123456780",
+  "address": "45 Gandhipuram, Coimbatore, Tamil Nadu"
+}
+
+###
+
+### 5. Create Customer 3 - Arjun Mehta
+POST http://localhost:8080/api/customers
+Content-Type: application/json
+Authorization: Bearer <TOKEN>
+
+{
+  "name": "Arjun Mehta",
+  "email": "arjun.mehta@email.com",
+  "phone": "9988776655",
+  "address": "78 RS Puram, Coimbatore, Tamil Nadu"
+}
+
+###
+### ---- After creating customers, note the customerId from each response ----
+### Assuming: Rahul=1, Priya=2, Arjun=3
+
+### 6. Create Account for Rahul (customerId: 1)
+POST http://localhost:8080/api/accounts
+Content-Type: application/json
+Authorization: Bearer <TOKEN>
+
+{
+  "accountNumber": "SB-1001-2024",
+  "accountType": "SAVINGS",
+  "balance": 50000.00,
+  "customerId": 1
+}
+
+###
+
+### 7. Create Account for Priya (customerId: 2)
+POST http://localhost:8080/api/accounts
+Content-Type: application/json
+Authorization: Bearer <TOKEN>
+
+{
+  "accountNumber": "SB-1002-2024",
+  "accountType": "CURRENT",
+  "balance": 125000.00,
+  "customerId": 2
+}
+
+###
+
+### 8. Create Account for Arjun (customerId: 3)
+POST http://localhost:8080/api/accounts
+Content-Type: application/json
+Authorization: Bearer <TOKEN>
+
+{
+  "accountNumber": "FD-1003-2024",
+  "accountType": "FIXED_DEPOSIT",
+  "balance": 200000.00,
+  "customerId": 3
+}
+
+###
+
+### 9. Register login user for Rahul (customerId: 1)
+POST http://localhost:8080/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "rahul",
+  "password": "Rahul@123",
+  "role": "CUSTOMER",
+  "customerId": 1
+}
+
+###
+
+### 10. Register login user for Priya (customerId: 2)
+POST http://localhost:8080/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "priya",
+  "password": "Priya@123",
+  "role": "CUSTOMER",
+  "customerId": 2
+}
+
+###
+
+### 11. Register login user for Arjun (customerId: 3)
+POST http://localhost:8080/api/auth/register
+Content-Type: application/json
+
+{
+  "username": "arjun",
+  "password": "Arjun@123",
+  "role": "CUSTOMER",
+  "customerId": 3
+}

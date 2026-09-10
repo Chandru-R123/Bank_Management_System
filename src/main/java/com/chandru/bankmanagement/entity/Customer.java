@@ -21,6 +21,14 @@ public class Customer {
 
     private String address;
 
+    /**
+     * The Keycloak user UUID (JWT "sub" claim) linked to this customer.
+     * Populated when a customer registers via the Keycloak-backed flow.
+     * Null for customers created by admin before Keycloak was integrated.
+     */
+    @Column(name = "keycloak_sub", unique = true)
+    private String keycloakSub;
+
     // One customer can have many accounts
     @OneToMany(mappedBy = "customer")
     private List<Account> accounts;
@@ -85,5 +93,13 @@ public class Customer {
 
     public void setAccounts(List<Account> accounts) {
         this.accounts = accounts;
+    }
+
+    public String getKeycloakSub() {
+        return keycloakSub;
+    }
+
+    public void setKeycloakSub(String keycloakSub) {
+        this.keycloakSub = keycloakSub;
     }
 }

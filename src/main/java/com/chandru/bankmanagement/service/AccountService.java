@@ -5,12 +5,11 @@ import com.chandru.bankmanagement.dto.AccountResponse;
 import com.chandru.bankmanagement.entity.Account;
 import com.chandru.bankmanagement.entity.Customer;
 import com.chandru.bankmanagement.entity.Transaction;
-import com.chandru.bankmanagement.entity.User;
 import com.chandru.bankmanagement.exception.AccountNotFoundException;
+import com.chandru.bankmanagement.exception.UnauthorizedAccessException;
 import com.chandru.bankmanagement.repository.AccountRepository;
 import com.chandru.bankmanagement.repository.CustomerRepository;
 import com.chandru.bankmanagement.repository.TransactionRepository;
-import com.chandru.bankmanagement.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,404 +17,189 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * All methods that are CUSTOMER-facing receive the Keycloak JWT subject ("sub")
+ * as the identity — never a username or DB user id.
+ *
+ * ADMIN methods do not perform ownership checks.
+ */
 @Service
 public class AccountService {
 
-    private final AccountRepository accountRepository;
-    private final CustomerRepository customerRepository;
+    private final AccountRepository    accountRepository;
+    private final CustomerRepository   customerRepository;
     private final TransactionRepository transactionRepository;
-    private final UserRepository userRepository;
 
-    public AccountService(
-            AccountRepository accountRepository,
-            CustomerRepository customerRepository,
-            TransactionRepository transactionRepository,
-            UserRepository userRepository) {
-
-        this.accountRepository = accountRepository;
-        this.customerRepository = customerRepository;
+    public AccountService(AccountRepository accountRepository,
+                          CustomerRepository customerRepository,
+                          TransactionRepository transactionRepository) {
+        this.accountRepository     = accountRepository;
+        this.customerRepository    = customerRepository;
         this.transactionRepository = transactionRepository;
-        this.userRepository = userRepository;
     }
 
-    // =====================================================
-    // CREATE ACCOUNT - ADMIN
-    // =====================================================
+    // ── ADMIN: create ──────────────────────────────────────────────────
 
     public AccountResponse createAccount(AccountRequest request) {
-
-        if (accountRepository.existsByAccountNumber(
-                request.getAccountNumber())) {
-
-            throw new RuntimeException(
-                    "Account number already exists");
+        if (accountRepository.existsByAccountNumber(request.getAccountNumber())) {
+            throw new RuntimeException("Account number already exists");
         }
-
-        Customer customer = customerRepository
-                .findById(request.getCustomerId())
-                .orElseThrow(() ->
-                        new RuntimeException("Customer not found"));
+        Customer customer = customerRepository.findById(request.getCustomerId())
+                .orElseThrow(() -> new RuntimeException("Customer not found"));
 
         Account account = new Account();
-
         account.setAccountNumber(request.getAccountNumber());
         account.setAccountType(request.getAccountType());
         account.setBalance(request.getBalance());
         account.setCustomer(customer);
 
-        Account savedAccount =
-                accountRepository.save(account);
-
-        return convertToResponse(savedAccount);
+        return convertToResponse(accountRepository.save(account));
     }
 
-    // =====================================================
-    // GET ACCOUNT BY ID
-    // ADMIN
-    // =====================================================
+    // ── ADMIN: read one ────────────────────────────────────────────────
 
     public AccountResponse getAccountById(Long id) {
-
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() ->
-                        new AccountNotFoundException(
-                                "Account not found"));
-
-        return convertToResponse(account);
+        return convertToResponse(findAccount(id));
     }
 
-    // =====================================================
-    // UPDATE ACCOUNT - ADMIN
-    // =====================================================
+    // ── ADMIN: update ──────────────────────────────────────────────────
 
-    public AccountResponse updateAccount(
-            Long id,
-            AccountRequest request) {
+    public AccountResponse updateAccount(Long id, AccountRequest request) {
+        Account account = findAccount(id);
+        account.setAccountNumber(request.getAccountNumber());
+        account.setAccountType(request.getAccountType());
+        account.setBalance(request.getBalance());
 
-        Account account = accountRepository.findById(id)
-                .orElseThrow(() ->
-                        new AccountNotFoundException(
-                                "Account not found"));
-
-        account.setAccountNumber(
-                request.getAccountNumber());
-
-        account.setAccountType(
-                request.getAccountType());
-
-        account.setBalance(
-                request.getBalance());
-
-        Account updated =
-                accountRepository.save(account);
-
-        return convertToResponse(updated);
+        if (request.getCustomerId() != null) {
+            Customer customer = customerRepository.findById(request.getCustomerId())
+                    .orElseThrow(() -> new RuntimeException("Customer not found"));
+            account.setCustomer(customer);
+        }
+        return convertToResponse(accountRepository.save(account));
     }
 
-    // =====================================================
-    // DELETE ACCOUNT - ADMIN
-    // =====================================================
+    // ── ADMIN: delete ──────────────────────────────────────────────────
 
     public void deleteAccount(Long id) {
-
         if (!accountRepository.existsById(id)) {
-
-            throw new AccountNotFoundException(
-                    "Account not found");
+            throw new AccountNotFoundException("Account not found");
         }
-
         accountRepository.deleteById(id);
     }
 
-    // =====================================================
-    // GET ALL ACCOUNTS - ADMIN
-    // =====================================================
+    // ── ADMIN: list all ────────────────────────────────────────────────
 
     public List<AccountResponse> getAllAccounts() {
+        return accountRepository.findAll().stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
 
-        return accountRepository.findAll()
+    // ── CUSTOMER: my accounts (resolved by Keycloak sub) ──────────────
+
+    public List<AccountResponse> getAccountsForSub(String keycloakSub) {
+        return accountRepository.findByCustomerKeycloakSub(keycloakSub)
                 .stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
     }
 
-    // =====================================================
-    // DEPOSIT - ADMIN
-    // =====================================================
+    // ── CUSTOMER + ADMIN: deposit ──────────────────────────────────────
 
-    public AccountResponse deposit(
-            Long id,
-            Double amount) {
-
-        return deposit(id, amount, null);
-    }
-
-    // =====================================================
-    // DEPOSIT - USER AWARE
-    // =====================================================
-
-    public AccountResponse deposit(
-            Long id,
-            Double amount,
-            String username) {
-
-        Account account = getAccount(id);
-
+    /**
+     * @param keycloakSub  null → ADMIN (no ownership check)
+     *                     non-null → CUSTOMER (must own the account)
+     */
+    public AccountResponse deposit(Long id, Double amount, String keycloakSub) {
+        Account account = findAccount(id);
         validateAmount(amount);
+        if (keycloakSub != null) validateOwnership(account, keycloakSub);
 
-        // If username is provided,
-        // verify ownership.
-        if (username != null) {
-            validateOwnership(account, username);
-        }
-
-        account.setBalance(
-                account.getBalance() + amount);
-
-        Account updated =
-                accountRepository.save(account);
-
-        Transaction transaction =
-                new Transaction();
-
-        transaction.setTransactionType("DEPOSIT");
-        transaction.setAmount(amount);
-        transaction.setTransactionDate(
-                LocalDateTime.now());
-        transaction.setAccount(updated);
-
-        transactionRepository.save(transaction);
-
+        account.setBalance(account.getBalance() + amount);
+        Account updated = accountRepository.save(account);
+        saveTransaction(updated, "DEPOSIT", amount);
         return convertToResponse(updated);
     }
 
-    // =====================================================
-    // WITHDRAW - ADMIN
-    // =====================================================
+    // ── CUSTOMER + ADMIN: withdraw ─────────────────────────────────────
 
-    public AccountResponse withdraw(
-            Long id,
-            Double amount) {
-
-        return withdraw(id, amount, null);
-    }
-
-    // =====================================================
-    // WITHDRAW - USER AWARE
-    // =====================================================
-
-    public AccountResponse withdraw(
-            Long id,
-            Double amount,
-            String username) {
-
-        Account account = getAccount(id);
-
+    public AccountResponse withdraw(Long id, Double amount, String keycloakSub) {
+        Account account = findAccount(id);
         validateAmount(amount);
-
-        if (username != null) {
-            validateOwnership(account, username);
-        }
+        if (keycloakSub != null) validateOwnership(account, keycloakSub);
 
         if (account.getBalance() < amount) {
-
-            throw new RuntimeException(
-                    "Insufficient balance");
+            throw new RuntimeException("Insufficient balance");
         }
-
-        account.setBalance(
-                account.getBalance() - amount);
-
-        Account updated =
-                accountRepository.save(account);
-
-        Transaction transaction =
-                new Transaction();
-
-        transaction.setTransactionType("WITHDRAW");
-        transaction.setAmount(amount);
-        transaction.setTransactionDate(
-                LocalDateTime.now());
-        transaction.setAccount(updated);
-
-        transactionRepository.save(transaction);
-
+        account.setBalance(account.getBalance() - amount);
+        Account updated = accountRepository.save(account);
+        saveTransaction(updated, "WITHDRAW", amount);
         return convertToResponse(updated);
     }
 
-    // =====================================================
-    // TRANSFER - ADMIN
-    // =====================================================
+    // ── CUSTOMER + ADMIN: transfer ─────────────────────────────────────
 
     @Transactional
-    public void transferMoney(
-            Long fromId,
-            Long toId,
-            Double amount) {
-
-        transferMoney(
-                fromId,
-                toId,
-                amount,
-                null);
-    }
-
-    // =====================================================
-    // TRANSFER - USER AWARE
-    // =====================================================
-
-    @Transactional
-    public void transferMoney(
-            Long fromId,
-            Long toId,
-            Double amount,
-            String username) {
-
+    public void transferMoney(Long fromId, Long toId,
+                              Double amount, String keycloakSub) {
         if (fromId.equals(toId)) {
-
-            throw new RuntimeException(
-                    "Cannot transfer to the same account");
+            throw new RuntimeException("Cannot transfer to the same account");
         }
-
-        Account fromAccount = getAccount(fromId);
-
-        Account toAccount = getAccount(toId);
-
+        Account from = findAccount(fromId);
+        Account to   = findAccount(toId);
         validateAmount(amount);
 
-        // Customer can only transfer
-        // FROM their own account.
-        if (username != null) {
+        // Customer may only transfer FROM their own account
+        if (keycloakSub != null) validateOwnership(from, keycloakSub);
 
-            validateOwnership(
-                    fromAccount,
-                    username);
+        if (from.getBalance() < amount) {
+            throw new RuntimeException("Insufficient balance");
         }
 
-        if (fromAccount.getBalance() < amount) {
+        from.setBalance(from.getBalance() - amount);
+        to.setBalance(to.getBalance() + amount);
+        accountRepository.save(from);
+        accountRepository.save(to);
 
-            throw new RuntimeException(
-                    "Insufficient balance");
-        }
-
-        fromAccount.setBalance(
-                fromAccount.getBalance() - amount);
-
-        toAccount.setBalance(
-                toAccount.getBalance() + amount);
-
-        accountRepository.save(fromAccount);
-        accountRepository.save(toAccount);
-
-        // Sender transaction
-        Transaction sender =
-                new Transaction();
-
-        sender.setTransactionType(
-                "TRANSFER_OUT");
-
-        sender.setAmount(amount);
-
-        sender.setTransactionDate(
-                LocalDateTime.now());
-
-        sender.setAccount(fromAccount);
-
-        transactionRepository.save(sender);
-
-        // Receiver transaction
-        Transaction receiver =
-                new Transaction();
-
-        receiver.setTransactionType(
-                "TRANSFER_IN");
-
-        receiver.setAmount(amount);
-
-        receiver.setTransactionDate(
-                LocalDateTime.now());
-
-        receiver.setAccount(toAccount);
-
-        transactionRepository.save(receiver);
+        saveTransaction(from, "TRANSFER_OUT", amount);
+        saveTransaction(to,   "TRANSFER_IN",  amount);
     }
 
-    // =====================================================
-    // FIND ACCOUNT
-    // =====================================================
+    // ── private helpers ────────────────────────────────────────────────
 
-    private Account getAccount(Long id) {
-
+    private Account findAccount(Long id) {
         return accountRepository.findById(id)
-                .orElseThrow(() ->
-                        new AccountNotFoundException(
-                                "Account not found"));
+                .orElseThrow(() -> new AccountNotFoundException("Account not found"));
     }
-
-    // =====================================================
-    // VALIDATE AMOUNT
-    // =====================================================
 
     private void validateAmount(Double amount) {
-
         if (amount == null || amount <= 0) {
-
-            throw new RuntimeException(
-                    "Amount must be greater than zero");
+            throw new RuntimeException("Amount must be greater than zero");
         }
     }
 
-    // =====================================================
-    // VALIDATE ACCOUNT OWNERSHIP
-    // =====================================================
-
-    private void validateOwnership(
-            Account account,
-            String username) {
-
-        User user = userRepository
-                .findByUsername(username)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "User not found"));
-
-        // ADMIN can access everything
-        if ("ADMIN".equalsIgnoreCase(
-                user.getRole())) {
-
-            return;
-        }
-
-        // Customer must have linked customer
-        if (user.getCustomer() == null) {
-
-            throw new RuntimeException(
-                    "Customer is not linked to this user");
-        }
-
-        Long userCustomerId =
-                user.getCustomer()
-                        .getCustomerId();
-
-        Long accountCustomerId =
-                account.getCustomer()
-                        .getCustomerId();
-
-        if (!userCustomerId.equals(
-                accountCustomerId)) {
-
-            throw new RuntimeException(
-                    "You are not authorized to access this account");
-        }
+    /**
+     * Verify that the account belongs to the customer identified by
+     * the Keycloak sub claim.  Throws 403 if not.
+     */
+    private void validateOwnership(Account account, String keycloakSub) {
+        accountRepository
+                .findByAccountIdAndCustomerKeycloakSub(
+                        account.getAccountId(), keycloakSub)
+                .orElseThrow(() -> new UnauthorizedAccessException(
+                        "You are not authorised to access this account"));
     }
 
-    // =====================================================
-    // ENTITY → RESPONSE
-    // =====================================================
+    private void saveTransaction(Account account, String type, Double amount) {
+        Transaction tx = new Transaction();
+        tx.setTransactionType(type);
+        tx.setAmount(amount);
+        tx.setTransactionDate(LocalDateTime.now());
+        tx.setAccount(account);
+        transactionRepository.save(tx);
+    }
 
-    private AccountResponse convertToResponse(
-            Account account) {
-
+    private AccountResponse convertToResponse(Account account) {
         return new AccountResponse(
                 account.getAccountId(),
                 account.getAccountNumber(),
@@ -425,4 +209,3 @@ public class AccountService {
         );
     }
 }
-

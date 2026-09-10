@@ -2,150 +2,85 @@ package com.chandru.bankmanagement.service;
 
 import com.chandru.bankmanagement.dto.TransactionResponse;
 import com.chandru.bankmanagement.entity.Transaction;
-import com.chandru.bankmanagement.entity.User;
 import com.chandru.bankmanagement.exception.UnauthorizedAccessException;
 import com.chandru.bankmanagement.repository.AccountRepository;
 import com.chandru.bankmanagement.repository.TransactionRepository;
-import com.chandru.bankmanagement.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * ADMIN  → any account.
+ * CUSTOMER → own accounts only (verified via keycloakSub == customer.keycloak_sub).
+ */
 @Service
 public class TransactionService {
 
     private final TransactionRepository transactionRepository;
-    private final AccountRepository accountRepository;
-    private final UserRepository userRepository;
+    private final AccountRepository     accountRepository;
 
-    public TransactionService(
-            TransactionRepository transactionRepository,
-            AccountRepository accountRepository,
-            UserRepository userRepository) {
-
+    public TransactionService(TransactionRepository transactionRepository,
+                              AccountRepository accountRepository) {
         this.transactionRepository = transactionRepository;
-        this.accountRepository = accountRepository;
-        this.userRepository = userRepository;
+        this.accountRepository     = accountRepository;
     }
 
-    // ==========================================
-    // Get All Transactions
-    // ADMIN ONLY
-    // ==========================================
+    // ── ADMIN: all transactions ────────────────────────────────────────
 
     public List<TransactionResponse> getAllTransactions() {
-
         return transactionRepository.findAll()
                 .stream()
-                .map(this::convertToResponse)
+                .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
-    // ==========================================
-    // Get Transactions By Account
-    // Internal method
-    // ==========================================
+    // ── ADMIN: by account (no ownership check) ─────────────────────────
 
-    public List<TransactionResponse> getTransactionsByAccount(
-            Long accountId) {
-
-        return transactionRepository
-                .findByAccountAccountId(accountId)
+    public List<TransactionResponse> getTransactionsByAccount(Long accountId) {
+        return transactionRepository.findByAccountAccountId(accountId)
                 .stream()
-                .map(this::convertToResponse)
+                .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
-    // ==========================================
-    // Get Transactions By Account For User
-    // ADMIN → Any account
-    // CUSTOMER → Own account only
-    // ==========================================
+    // ── ADMIN + CUSTOMER: by account with ownership enforcement ────────
 
+    /**
+     * @param keycloakSub  null → caller is ADMIN (skip ownership check)
+     *                     non-null → caller is CUSTOMER; account must belong to them
+     */
     public List<TransactionResponse> getTransactionsByAccountForUser(
-            Long accountId,
-            String username) {
+            Long accountId, String keycloakSub) {
 
-        User user = userRepository.findByUsername(username)
-                .orElseThrow(() ->
-                        new RuntimeException(
-                                "User not found"));
-
-        // ==========================================
-        // ADMIN
-        // ==========================================
-
-        if ("ADMIN".equalsIgnoreCase(user.getRole())) {
-
-            return getTransactionsByAccount(accountId);
-        }
-
-        // ==========================================
-        // CUSTOMER
-        // ==========================================
-
-        if ("CUSTOMER".equalsIgnoreCase(user.getRole())) {
-
-            // Customer must be linked to a customer record
-            if (user.getCustomer() == null) {
-
-                throw new UnauthorizedAccessException(
-                        "Customer is not linked to this user");
-            }
-
-            Long customerId =
-                    user.getCustomer().getCustomerId();
-
-            // Check ownership
+        if (keycloakSub != null) {
+            // Verify the account belongs to this customer
             accountRepository
-                    .findByAccountIdAndCustomerCustomerId(
-                            accountId,
-                            customerId)
-                    .orElseThrow(() ->
-                            new UnauthorizedAccessException(
-                                    "You are not authorized to access this account"));
-
-            // Ownership confirmed
-            return getTransactionsByAccount(accountId);
+                    .findByAccountIdAndCustomerKeycloakSub(accountId, keycloakSub)
+                    .orElseThrow(() -> new UnauthorizedAccessException(
+                            "You are not authorised to access this account"));
         }
 
-        // ==========================================
-        // Unknown role
-        // ==========================================
-
-        throw new UnauthorizedAccessException(
-                "You are not authorized to access this resource");
+        return getTransactionsByAccount(accountId);
     }
 
-    // ==========================================
-    // Get Transaction By ID
-    // ==========================================
+    // ── ADMIN: single transaction by id ───────────────────────────────
 
     public TransactionResponse getTransactionById(Long id) {
-
-        Transaction transaction =
-                transactionRepository.findById(id)
-                        .orElseThrow(() ->
-                                new RuntimeException(
-                                        "Transaction not found"));
-
-        return convertToResponse(transaction);
+        Transaction tx = transactionRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Transaction not found"));
+        return toResponse(tx);
     }
 
-    // ==========================================
-    // Convert Entity → Response DTO
-    // ==========================================
+    // ── mapping ────────────────────────────────────────────────────────
 
-    private TransactionResponse convertToResponse(
-            Transaction transaction) {
-
+    private TransactionResponse toResponse(Transaction tx) {
         return new TransactionResponse(
-                transaction.getTransactionId(),
-                transaction.getTransactionType(),
-                transaction.getAmount(),
-                transaction.getTransactionDate(),
-                transaction.getAccount().getAccountNumber()
+                tx.getTransactionId(),
+                tx.getTransactionType(),
+                tx.getAmount(),
+                tx.getTransactionDate(),
+                tx.getAccount().getAccountNumber()
         );
     }
 }

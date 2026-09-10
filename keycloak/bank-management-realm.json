@@ -1,0 +1,74 @@
+{
+  "realm": "bank-management",
+  "enabled": true,
+  "displayName": "State Bank Management",
+  "sslRequired": "none",
+  "registrationAllowed": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+
+  "accessTokenLifespan": 3600,
+
+  "roles": {
+    "realm": [
+      { "name": "ADMIN",    "description": "Bank administrator" },
+      { "name": "EMPLOYEE", "description": "Bank employee" },
+      { "name": "CUSTOMER", "description": "Bank customer" }
+    ]
+  },
+
+  "clients": [
+    {
+      "clientId": "bank-management-backend",
+      "name": "Bank Management Backend",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:4173/*",
+        "http://localhost:8080/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:4173",
+        "http://localhost:8080"
+      ],
+
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+
+      "protocolMappers": [
+        {
+          "name": "realm-roles-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String"
+          }
+        }
+      ],
+
+      "defaultClientScopes": ["openid", "profile", "email"],
+      "optionalClientScopes": ["address", "phone"]
+    }
+  ],
+
+  "requiredCredentials": ["password"],
+  "passwordPolicy": "length(8)"
+}
