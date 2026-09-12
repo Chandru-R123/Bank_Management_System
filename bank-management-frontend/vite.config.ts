@@ -4,14 +4,21 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // All /api/* requests → Spring Boot (port 8080)
+      // All /api/* requests → Spring Boot (local dev)
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      // NOTE: Keycloak (port 8180) is called directly by keycloak-js from the
-      // browser — no proxy needed.  The browser redirects to
-      // http://localhost:8180 for login, then back to http://localhost:5173.
+      // /auth/* → Keycloak (local dev — mirrors the NGINX gateway path)
+      // Only active when VITE_KEYCLOAK_URL is not set to direct Keycloak URL.
+      // Kept here so the proxy path works consistently.
+      '/auth': {
+        target: 'http://localhost:8180',
+        changeOrigin: true,
+      },
     },
   },
+  // Ensure VITE_KEYCLOAK_URL is available at build time for Docker
+  // (set via docker-compose build args → passed as --build-arg)
+  define: {},
 });

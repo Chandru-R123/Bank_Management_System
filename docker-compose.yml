@@ -1,22 +1,50 @@
 version: "3.9"
 
-# ─── Keycloak for local development ────────────────────────────────────────────
+# =============================================================================
+#  State Bank Management System — Full Stack Docker Compose
 #
-#  Keycloak  → http://localhost:8180        (admin: admin / admin)
-#  Spring Boot stays on               8080
-#  Vite dev server stays on           5173
+#  Single public entry point:  http://localhost:8080  (NGINX)
 #
-#  On first start the realm-import file is loaded automatically,
-#  creating the realm, client, and roles. You only need to create
-#  test users manually (see KEYCLOAK.md).
+#  Routing:
+#    http://localhost:8080/        →  React SPA  (static, served by NGINX)
+#    http://localhost:8080/api/*   →  Spring Boot (internal: backend:8080)
+#    http://localhost:8080/auth/*  →  Keycloak    (internal: keycloak:8180)
 #
-# ───────────────────────────────────────────────────────────────────────────────
+#  Internal ports are NOT exposed to the host.
+#  Only NGINX :8080 is the public entry point.
+#
+#  Usage:
+#    docker compose up --build        # first run / after code changes
+#    docker compose up                # subsequent runs
+#    docker compose down              # stop (data preserved)
+#    docker compose down -v           # stop + wipe all volumes
+# =============================================================================
 
 services:
 
+  # ── PostgreSQL ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: bank-postgres
+    environment:
+      POSTGRES_DB: bankdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: bank@123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - bank-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d bankdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Keycloak ────────────────────────────────────────────────────────────────
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.4
-    container_name: keycloak
+    container_name: bank-keycloak
     command: start-dev --import-realm
     environment:
       KEYCLOAK_ADMIN: admin
@@ -24,14 +52,63 @@ services:
       KC_HTTP_PORT: 8180
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HTTP_ENABLED: "true"
       KC_LOG_LEVEL: INFO
-    ports:
-      - "8180:8180"
     volumes:
-      # Realm export is imported on first start-dev run
       - ./keycloak/bank-management-realm.json:/opt/keycloak/data/import/bank-management-realm.json:ro
-      # Persist Keycloak H2 data between restarts (dev only)
       - keycloak_data:/opt/keycloak/data
+    networks:
+      - bank-network
+    # No healthcheck — Keycloak image has no curl/wget.
+    # Backend uses restart: unless-stopped to retry connection.
+    restart: unless-stopped
+
+  # ── Spring Boot Backend ─────────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./bank-management
+      dockerfile: Dockerfile
+    container_name: bank-backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bankdb
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: bank@123
+      # issuer-uri: public URL seen by the browser (NGINX → /auth/)
+      KC_ISSUER_URI: http://localhost:8080/auth/realms/bank-management
+      # jwk-set-uri: internal Docker URL for key fetching
+      KC_JWK_SET_URI: http://keycloak:8180/realms/bank-management/protocol/openid-connect/certs
+    networks:
+      - bank-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── NGINX Gateway (includes built React SPA) ────────────────────────────────
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+      args:
+        VITE_KEYCLOAK_URL: http://localhost:8080/auth
+    container_name: bank-nginx
+    ports:
+      - "8080:8080"
+    networks:
+      - bank-network
+    depends_on:
+      - backend
+      - keycloak
+    restart: unless-stopped
+
+# =============================================================================
+networks:
+  bank-network:
+    driver: bridge
 
 volumes:
+  postgres_data:
   keycloak_data:

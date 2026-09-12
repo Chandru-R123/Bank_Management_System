@@ -46,7 +46,8 @@ keycloak
     app.innerHTML = `
       <div style="padding:40px;color:red;font-family:monospace">
         <h2>Keycloak connection failed</h2>
-        <p>Make sure Keycloak is running on <strong>http://localhost:8180</strong></p>
+        <p>Make sure the stack is running: <strong>docker compose up --build</strong></p>
+        <p>Then open: <strong>http://localhost:8080</strong></p>
         <pre>${String(err)}</pre>
       </div>`;
   });

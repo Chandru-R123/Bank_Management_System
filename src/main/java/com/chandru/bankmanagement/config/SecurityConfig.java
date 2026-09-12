@@ -142,6 +142,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOriginPatterns(List.of(
+            "http://localhost:8080",   // NGINX gateway (Docker + prod)
             "http://localhost:5173",   // Vite dev
             "http://localhost:4173",   // Vite preview
             "http://localhost:3000"    // CRA / other
