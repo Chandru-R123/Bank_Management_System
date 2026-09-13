@@ -4,21 +4,25 @@
   "displayName": "State Bank Management",
   "sslRequired": "none",
   "registrationAllowed": true,
+  "registrationEmailAsUsername": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
+  "rememberMe": true,
 
   "accessTokenLifespan": 3600,
 
   "roles": {
     "realm": [
-      { "name": "ADMIN",    "description": "Bank administrator" },
-      { "name": "EMPLOYEE", "description": "Bank employee" },
-      { "name": "CUSTOMER", "description": "Bank customer" }
+      { "name": "ADMIN",    "description": "Bank administrator — full access" },
+      { "name": "EMPLOYEE", "description": "Bank employee — customer and account management" },
+      { "name": "CUSTOMER", "description": "Bank customer — own accounts and transactions only" }
     ]
   },
+
+  "defaultRoles": ["CUSTOMER"],
 
   "clients": [
     {
@@ -68,6 +72,21 @@
       "optionalClientScopes": ["address", "phone"]
     }
   ],
+
+  "smtpServer": {
+    "host": "mailhog",
+    "port": "1025",
+    "from": "noreply@statebank.local",
+    "fromDisplayName": "State Bank Management",
+    "replyTo": "",
+    "replyToDisplayName": "",
+    "envelopeFrom": "",
+    "ssl": "false",
+    "starttls": "false",
+    "auth": "false",
+    "user": "",
+    "password": ""
+  },
 
   "requiredCredentials": ["password"],
   "passwordPolicy": "length(8)"

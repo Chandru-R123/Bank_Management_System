@@ -21,6 +21,7 @@ export async function renderCustomers(container: HTMLElement) {
   async function loadData() {
     const content = document.getElementById('customers-content');
     if (!content) return;
+    content.innerHTML = '<div class="loading">Loading...</div>';
     try {
       const list = await customers.getAll();
       if (list.length === 0) {
@@ -39,8 +40,8 @@ export async function renderCustomers(container: HTMLElement) {
                   <td>${c.customerId}</td>
                   <td>${c.name}</td>
                   <td>${c.email}</td>
-                  <td>${c.phone}</td>
-                  <td>${c.address}</td>
+                  <td>${c.phone || '—'}</td>
+                  <td>${c.address || '—'}</td>
                   <td class="actions">
                     <button class="btn btn-outline btn-sm" data-edit="${c.customerId}">Edit</button>
                     <button class="btn btn-danger btn-sm" data-delete="${c.customerId}">Delete</button>
@@ -53,7 +54,7 @@ export async function renderCustomers(container: HTMLElement) {
       `;
 
       content.querySelectorAll('[data-edit]').forEach(btn => {
-        btn.addEventListener('click', async () => {
+        btn.addEventListener('click', () => {
           const id = parseInt((btn as HTMLElement).dataset.edit!);
           const customer = list.find(c => c.customerId === id)!;
           openForm(customer, loadData);
@@ -74,7 +75,14 @@ export async function renderCustomers(container: HTMLElement) {
         });
       });
     } catch (err: unknown) {
-      content.innerHTML = `<div class="empty text-danger">${(err as Error).message}</div>`;
+      const msg = (err as Error).message || 'Failed to load customers';
+      content.innerHTML = `
+        <div class="empty text-danger">
+          ${msg}
+          <br/><br/>
+          <button class="btn btn-outline btn-sm" id="retry-btn">Retry</button>
+        </div>`;
+      content.querySelector('#retry-btn')!.addEventListener('click', loadData);
     }
   }
 }

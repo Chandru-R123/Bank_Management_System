@@ -18,13 +18,12 @@ const app = document.getElementById('app')!;
 //
 keycloak
   .init({
-    onLoad:           'login-required',   // redirect immediately if not logged in
-    checkLoginIframe: false,              // avoid iframe issues with some browsers
+    onLoad:           'login-required',
+    checkLoginIframe: false,
     pkceMethod:       'S256',
   })
-  .then((authenticated) => {
+  .then(async (authenticated) => {
     if (!authenticated) {
-      // Should not happen with login-required, but guard anyway
       keycloak.login();
       return;
     }
@@ -37,7 +36,26 @@ keycloak
       });
     }, 30_000);
 
-    // Start the SPA router
+    // If this is a CUSTOMER, sync their profile into the backend DB before
+    // routing. This creates the Customer row in PostgreSQL automatically when
+    // a user self-registers via Keycloak's registration page, and links any
+    // existing row by email if keycloak_sub doesn't match yet.
+    // We await this so the row is committed before the page renders.
+    const roles: string[] = (keycloak.tokenParsed as Record<string, unknown>
+      & { realm_access?: { roles?: string[] } })?.realm_access?.roles ?? [];
+
+    if (roles.includes('CUSTOMER')) {
+      try {
+        await fetch('/api/auth/sync', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${keycloak.token}` },
+        });
+      } catch (err) {
+        console.warn('Customer sync failed (non-fatal):', err);
+      }
+    }
+
+    // Start the SPA router — guaranteed to run after sync completes
     window.addEventListener('hashchange', route);
     route();
   })

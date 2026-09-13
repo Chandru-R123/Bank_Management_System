@@ -41,6 +41,21 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # ── MailHog — local SMTP server + web UI for email testing ────────────────
+  #
+  #  SMTP:    mailhog:1025  (used by Keycloak to send emails)
+  #  Web UI:  accessible at http://localhost:8080/mail/  (via NGINX)
+  #
+  #  All emails Keycloak sends (forgot password, verify email, etc.)
+  #  are captured here — nothing is delivered to real inboxes.
+  #
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: bank-mailhog
+    networks:
+      - bank-network
+    restart: unless-stopped
+
   # ── Keycloak ────────────────────────────────────────────────────────────────
   keycloak:
     image: quay.io/keycloak/keycloak:24.0.4

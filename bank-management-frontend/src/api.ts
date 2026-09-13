@@ -98,6 +98,8 @@ export const customers = {
   create:   (data: CustomerRequest)        => request<Customer>  ('POST',   '/customers', data),
   update:   (id: number, d: CustomerRequest) => request<Customer>('PUT',    `/customers/${id}`, d),
   delete:   (id: number)                   => request<string>    ('DELETE', `/customers/${id}`),
+  /** Called after CUSTOMER login to auto-create the PostgreSQL customer row */
+  sync:     ()                             => request<Customer>  ('POST',   '/auth/sync'),
 };
 
 // ── Accounts ──────────────────────────────────────────────────────────────────
