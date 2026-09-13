@@ -36,15 +36,17 @@ keycloak
       });
     }, 30_000);
 
-    // If this is a CUSTOMER, sync their profile into the backend DB before
-    // routing. This creates the Customer row in PostgreSQL automatically when
-    // a user self-registers via Keycloak's registration page, and links any
-    // existing row by email if keycloak_sub doesn't match yet.
-    // We await this so the row is committed before the page renders.
-    const roles: string[] = (keycloak.tokenParsed as Record<string, unknown>
-      & { realm_access?: { roles?: string[] } })?.realm_access?.roles ?? [];
+    // Sync customer profile to PostgreSQL after every login.
+    // This auto-creates the Customer row when a new user self-registers
+    // via Keycloak. We check for CUSTOMER role OR the default composite
+    // role (which now includes CUSTOMER for all new registrations).
+    const tokenParsed = keycloak.tokenParsed as Record<string, unknown> & {
+      realm_access?: { roles?: string[] };
+    };
+    const roles: string[] = tokenParsed?.realm_access?.roles ?? [];
+    const isCustomer = roles.includes('CUSTOMER');
 
-    if (roles.includes('CUSTOMER')) {
+    if (isCustomer) {
       try {
         await fetch('/api/auth/sync', {
           method: 'POST',
