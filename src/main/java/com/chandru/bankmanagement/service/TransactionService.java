@@ -57,7 +57,7 @@ public class TransactionService {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new AccountNotFoundException("Account not found"));
 
-        if (actor.requiresOwnership()) {
+        if (!actor.staff()) {
             String ownerSub = account.getCustomer() != null
                     ? account.getCustomer().getKeycloakSub() : null;
             if (ownerSub == null || !ownerSub.equals(actor.sub())) {

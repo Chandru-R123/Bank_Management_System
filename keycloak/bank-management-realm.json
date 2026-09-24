@@ -11,19 +11,38 @@
   "editUsernameAllowed": false,
   "bruteForceProtected": true,
   "rememberMe": true,
-
   "accessTokenLifespan": 3600,
-
   "roles": {
     "realm": [
-      { "name": "ADMIN",    "description": "Bank administrator — full access" },
-      { "name": "EMPLOYEE", "description": "Bank employee — customer and account management" },
-      { "name": "CUSTOMER", "description": "Bank customer — own accounts and transactions only" }
+      {
+        "name": "ADMIN",
+        "description": "Bank administrator — full access"
+      },
+      {
+        "name": "EMPLOYEE",
+        "description": "Bank employee — view all data, manage customer KYC records"
+      },
+      {
+        "name": "MAKER",
+        "description": "Staff maker — may post transactions (deposit / withdraw / transfer) on any account"
+      },
+      {
+        "name": "CHECKER",
+        "description": "Staff checker — verification actions: delete beneficiaries, revoke consents"
+      },
+      {
+        "name": "CUSTOMER",
+        "description": "Bank customer — own accounts, beneficiaries and consents only"
+      },
+      {
+        "name": "TPP",
+        "description": "Third-Party Provider (fintech app) — Open Banking consent requests and data access"
+      }
     ]
   },
-
-  "defaultRoles": ["CUSTOMER"],
-
+  "defaultRoles": [
+    "CUSTOMER"
+  ],
   "clients": [
     {
       "clientId": "bank-management-backend",
@@ -34,7 +53,6 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
-
       "redirectUris": [
         "http://localhost:8080/*",
         "http://localhost:5173/*",
@@ -45,12 +63,10 @@
         "http://localhost:5173",
         "http://localhost:4173"
       ],
-
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "http://localhost:8080/*"
       },
-
       "protocolMappers": [
         {
           "name": "realm-roles-mapper",
@@ -65,14 +81,51 @@
             "claim.name": "realm_access.roles",
             "jsonType.label": "String"
           }
+        },
+        {
+          "name": "phone-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "phone",
+            "claim.name": "phone",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
+        },
+        {
+          "name": "address-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "address",
+            "claim.name": "postal_address",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "multivalued": "false",
+            "aggregate.attrs": "false"
+          }
         }
       ],
-
-      "defaultClientScopes": ["openid", "profile", "email"],
-      "optionalClientScopes": ["address", "phone"]
+      "defaultClientScopes": [
+        "openid",
+        "profile",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone"
+      ]
     }
   ],
-
   "smtpServer": {
     "host": "mailhog",
     "port": "1025",
@@ -87,7 +140,233 @@
     "user": "",
     "password": ""
   },
-
-  "requiredCredentials": ["password"],
-  "passwordPolicy": "length(8)"
+  "requiredCredentials": [
+    "password"
+  ],
+  "passwordPolicy": "length(8)",
+  "components": {
+    "org.keycloak.userprofile.UserProfileProvider": [
+      {
+        "providerId": "declarative-user-profile",
+        "subComponents": {},
+        "config": {
+          "kc.user.profile.config": [
+            "{\"attributes\": [{\"name\": \"username\", \"displayName\": \"${username}\", \"validations\": {\"length\": {\"min\": 3, \"max\": 255}, \"username-prohibited-characters\": {}, \"up-username-not-idn-homograph\": {}}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}, {\"name\": \"email\", \"displayName\": \"${email}\", \"validations\": {\"email\": {}, \"length\": {\"max\": 255}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}, {\"name\": \"firstName\", \"displayName\": \"${firstName}\", \"validations\": {\"length\": {\"max\": 255}, \"person-name-prohibited-characters\": {}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}, {\"name\": \"lastName\", \"displayName\": \"${lastName}\", \"validations\": {\"length\": {\"max\": 255}, \"person-name-prohibited-characters\": {}}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}, {\"name\": \"phone\", \"displayName\": \"Mobile number\", \"validations\": {\"length\": {\"min\": 10, \"max\": 16}, \"pattern\": {\"pattern\": \"^\\\\+?[0-9][0-9 -]{8,14}$\", \"error-message\": \"Enter a valid mobile number (10–15 digits, optional +country code)\"}}, \"annotations\": {\"inputType\": \"html5-tel\", \"inputHelperTextBefore\": \"Used by the bank to contact you about your accounts\"}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}, {\"name\": \"address\", \"displayName\": \"Address\", \"validations\": {\"length\": {\"min\": 5, \"max\": 255}}, \"annotations\": {\"inputType\": \"textarea\", \"inputHelperTextBefore\": \"Your residential address (as per KYC documents)\"}, \"required\": {\"roles\": [\"user\"]}, \"permissions\": {\"view\": [\"admin\", \"user\"], \"edit\": [\"admin\", \"user\"]}, \"multivalued\": false}], \"groups\": [{\"name\": \"user-metadata\", \"displayHeader\": \"User metadata\", \"displayDescription\": \"Attributes, which refer to user metadata\"}]}"
+          ]
+        }
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "admin-user",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "User",
+      "email": "admin@statebank.local",
+      "attributes": {
+        "phone": [
+          "9000000001"
+        ],
+        "address": [
+          "State Bank HQ, Coimbatore, Tamil Nadu"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Admin@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ADMIN"
+      ]
+    },
+    {
+      "username": "employee",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Kavya",
+      "lastName": "Raman",
+      "email": "kavya.raman@statebank.local",
+      "attributes": {
+        "phone": [
+          "9000000002"
+        ],
+        "address": [
+          "State Bank, Coimbatore Branch"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Employee@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "EMPLOYEE"
+      ]
+    },
+    {
+      "username": "maker",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Suresh",
+      "lastName": "Kumar",
+      "email": "suresh.kumar@statebank.local",
+      "attributes": {
+        "phone": [
+          "9000000003"
+        ],
+        "address": [
+          "State Bank, Coimbatore Branch"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Maker@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "EMPLOYEE",
+        "MAKER"
+      ]
+    },
+    {
+      "username": "checker",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Meena",
+      "lastName": "Iyer",
+      "email": "meena.iyer@statebank.local",
+      "attributes": {
+        "phone": [
+          "9000000004"
+        ],
+        "address": [
+          "State Bank, Coimbatore Branch"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Checker@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "EMPLOYEE",
+        "CHECKER"
+      ]
+    },
+    {
+      "username": "fintech-app",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Budget",
+      "lastName": "Buddy",
+      "email": "api@budgetbuddy.example",
+      "attributes": {
+        "phone": [
+          "9000000005"
+        ],
+        "address": [
+          "BudgetBuddy Technologies, Bengaluru"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Tpp@12345",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "TPP"
+      ]
+    },
+    {
+      "username": "rahul",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Rahul",
+      "lastName": "Sharma",
+      "email": "rahul.sharma@statebank.com",
+      "attributes": {
+        "phone": [
+          "9876543210"
+        ],
+        "address": [
+          "12 Anna Nagar, Chennai, Tamil Nadu"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Customer@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER"
+      ]
+    },
+    {
+      "username": "priya",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Priya",
+      "lastName": "Venkat",
+      "email": "priya.venkat@statebank.com",
+      "attributes": {
+        "phone": [
+          "9123456780"
+        ],
+        "address": [
+          "45 Gandhipuram, Coimbatore, Tamil Nadu"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Customer@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER"
+      ]
+    },
+    {
+      "username": "arjun",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Arjun",
+      "lastName": "Mehta",
+      "email": "arjun.mehta@statebank.com",
+      "attributes": {
+        "phone": [
+          "9988776655"
+        ],
+        "address": [
+          "78 RS Puram, Coimbatore, Tamil Nadu"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Customer@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER"
+      ]
+    }
+  ]
 }

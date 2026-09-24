@@ -1,0 +1,9 @@
+# Shared build context for the backend and the NGINX (frontend) images.
+# Keep bank-management-frontend/ sources — the NGINX image builds them.
+.git
+.idea
+.vscode
+target
+bank-management-frontend/node_modules
+bank-management-frontend/dist
+**/*.log

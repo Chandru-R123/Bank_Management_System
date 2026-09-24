@@ -262,10 +262,38 @@ public class AccountService {
         return ResponseMapper.toResponse(saved);
     }
 
-    // ── deposit ────────────────────────────────────────────────────────
+    // ── deposit / withdraw ─────────────────────────────────────────────
 
     @Transactional
     public AccountResponse deposit(Long id, BigDecimal amount, String description, Actor actor) {
+        return ResponseMapper.toResponse(doDeposit(id, amount, description, actor).getAccount());
+    }
+
+    @Transactional
+    public AccountResponse withdraw(Long id, BigDecimal amount, String description, Actor actor) {
+        return ResponseMapper.toResponse(doWithdraw(id, amount, description, actor).getAccount());
+    }
+
+    /**
+     * Generic entry point used by POST /api/transactions and
+     * POST /api/accounts/{id}/transactions.
+     *
+     * @param type DEPOSIT or WITHDRAW (transfers use their own endpoint)
+     * @return the recorded transaction
+     */
+    @Transactional
+    public TransactionResponse postTransaction(Long accountId, String type, BigDecimal amount,
+                                               String description, Actor actor) {
+        Transaction tx = switch (type == null ? "" : type.trim().toUpperCase(Locale.ROOT)) {
+            case TransactionTypes.DEPOSIT  -> doDeposit(accountId, amount, description, actor);
+            case TransactionTypes.WITHDRAW -> doWithdraw(accountId, amount, description, actor);
+            default -> throw new BusinessRuleException(
+                    "Transaction type must be DEPOSIT or WITHDRAW (use /api/accounts/transfer for transfers)");
+        };
+        return ResponseMapper.toResponse(tx);
+    }
+
+    private Transaction doDeposit(Long id, BigDecimal amount, String description, Actor actor) {
         amount = validateAmount(amount, actor);
         Account account = findAccountForUpdate(id);
         ensureOwner(account, actor);
@@ -273,15 +301,11 @@ public class AccountService {
 
         account.setBalance(money(account.getBalance()).add(amount));
         Account updated = accountRepository.save(account);
-        record(updated, TransactionTypes.DEPOSIT, amount,
+        return record(updated, TransactionTypes.DEPOSIT, amount,
                 orDefault(description, "Cash deposit"), null, null, actor);
-        return ResponseMapper.toResponse(updated);
     }
 
-    // ── withdraw ───────────────────────────────────────────────────────
-
-    @Transactional
-    public AccountResponse withdraw(Long id, BigDecimal amount, String description, Actor actor) {
+    private Transaction doWithdraw(Long id, BigDecimal amount, String description, Actor actor) {
         amount = validateAmount(amount, actor);
         Account account = findAccountForUpdate(id);
         ensureOwner(account, actor);
@@ -289,9 +313,8 @@ public class AccountService {
 
         account.setBalance(money(account.getBalance()).subtract(amount));
         Account updated = accountRepository.save(account);
-        record(updated, TransactionTypes.WITHDRAW, amount,
+        return record(updated, TransactionTypes.WITHDRAW, amount,
                 orDefault(description, "Cash withdrawal"), null, null, actor);
-        return ResponseMapper.toResponse(updated);
     }
 
     // ── transfer ───────────────────────────────────────────────────────

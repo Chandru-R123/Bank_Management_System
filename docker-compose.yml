@@ -90,7 +90,8 @@ services:
   # ── Spring Boot Backend ─────────────────────────────────────────────────────
   backend:
     build:
-      context: ./bank-management
+      # The Spring Boot project (pom.xml, src/, Dockerfile) is the repo root
+      context: .
       dockerfile: Dockerfile
     container_name: bank-backend
     environment:

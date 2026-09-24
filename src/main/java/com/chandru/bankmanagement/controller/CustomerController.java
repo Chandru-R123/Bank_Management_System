@@ -3,8 +3,10 @@ package com.chandru.bankmanagement.controller;
 import com.chandru.bankmanagement.dto.CustomerRequest;
 import com.chandru.bankmanagement.dto.CustomerResponse;
 import com.chandru.bankmanagement.dto.ProfileUpdateRequest;
+import com.chandru.bankmanagement.security.Roles;
 import com.chandru.bankmanagement.service.CustomerService;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -25,8 +27,9 @@ public class CustomerController {
 
     // ── STAFF: create ──────────────────────────────────────────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
+    @PreAuthorize(Roles.CUSTOMER_MANAGERS)
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     public CustomerResponse createCustomer(
             @Valid @RequestBody CustomerRequest request) {
         return customerService.saveCustomer(request);
@@ -34,7 +37,7 @@ public class CustomerController {
 
     // ── STAFF: list all ────────────────────────────────────────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
+    @PreAuthorize(Roles.STAFF)
     @GetMapping
     public List<CustomerResponse> getAllCustomers() {
         return customerService.getAllCustomers();
@@ -60,7 +63,7 @@ public class CustomerController {
 
     // ── STAFF: by id ───────────────────────────────────────────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
+    @PreAuthorize(Roles.STAFF)
     @GetMapping("/{id}")
     public CustomerResponse getCustomerById(@PathVariable Long id) {
         return customerService.getCustomerById(id);
@@ -68,7 +71,7 @@ public class CustomerController {
 
     // ── STAFF: update ──────────────────────────────────────────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
+    @PreAuthorize(Roles.CUSTOMER_MANAGERS)
     @PutMapping("/{id}")
     public CustomerResponse updateCustomer(
             @PathVariable Long id,
@@ -87,7 +90,7 @@ public class CustomerController {
 
     // ── STAFF: paginated ───────────────────────────────────────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
+    @PreAuthorize(Roles.STAFF)
     @GetMapping("/page")
     public Page<CustomerResponse> getCustomers(
             @RequestParam(defaultValue = "0")          int    page,
@@ -99,7 +102,7 @@ public class CustomerController {
 
     // ── STAFF: by email ────────────────────────────────────────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
+    @PreAuthorize(Roles.STAFF)
     @GetMapping("/email/{email}")
     public CustomerResponse getCustomerByEmail(@PathVariable String email) {
         return customerService.getCustomerByEmail(email);

@@ -1,4 +1,4 @@
-import { customers, accounts, isAdmin } from '../api';
+import { customers, accounts, isAdmin, canManageCustomers } from '../api';
 import type { Account, Customer, CustomerRequest } from '../api';
 import { icon } from '../icons';
 import {
@@ -19,7 +19,7 @@ export async function renderCustomers(container: HTMLElement) {
         </div>
         <div class="page-actions">
           <button class="btn btn-secondary" id="cust-export" disabled>${icon('download', 16)} Export</button>
-          <button class="btn btn-primary" id="cust-add">${icon('userPlus', 16)} New customer</button>
+          ${canManageCustomers() ? `<button class="btn btn-primary" id="cust-add">${icon('userPlus', 16)} New customer</button>` : ''}
         </div>
       </div>
 
@@ -49,7 +49,7 @@ export async function renderCustomers(container: HTMLElement) {
   const content = document.getElementById('cust-content')!;
   const exportBtn = document.getElementById('cust-export') as HTMLButtonElement;
 
-  document.getElementById('cust-add')!.addEventListener('click', () => openCustomerForm(null, loadData));
+  document.getElementById('cust-add')?.addEventListener('click', () => openCustomerForm(null, loadData));
   document.getElementById('cust-search')!.addEventListener('input', debounce((e: Event) => {
     query = (e.target as HTMLInputElement).value.trim().toLowerCase();
     render();
@@ -115,9 +115,9 @@ export async function renderCustomers(container: HTMLElement) {
       content.innerHTML = emptyState({
         icon: 'users', title: 'No customers yet',
         text: 'Add a customer at the branch, or they can self-register for online banking.',
-        action: `<button class="btn btn-primary btn-sm" data-empty-add>${icon('userPlus', 14)} New customer</button>`,
+        action: canManageCustomers() ? `<button class="btn btn-primary btn-sm" data-empty-add>${icon('userPlus', 14)} New customer</button>` : '',
       });
-      content.querySelector('[data-empty-add]')!.addEventListener('click', () => openCustomerForm(null, loadData));
+      content.querySelector('[data-empty-add]')?.addEventListener('click', () => openCustomerForm(null, loadData));
       return;
     }
     if (rows.length === 0) {
@@ -159,7 +159,7 @@ export async function renderCustomers(container: HTMLElement) {
                   <td class="num fw-600">${formatCurrency(total)}</td>
                   <td class="actions">
                     <button class="btn-icon" data-view="${c.customerId}" title="View">${icon('eye', 16)}</button>
-                    <button class="btn-icon" data-edit="${c.customerId}" title="Edit">${icon('pencil', 16)}</button>
+                    ${canManageCustomers() ? `<button class="btn-icon" data-edit="${c.customerId}" title="Edit">${icon('pencil', 16)}</button>` : ''}
                     ${admin ? `<button class="btn-icon danger" data-delete="${c.customerId}" ${own.length ? 'disabled title="Customers with accounts cannot be deleted"' : 'title="Delete"'}>${icon('trash', 16)}</button>` : ''}
                   </td>
                 </tr>`;
@@ -235,7 +235,7 @@ function openCustomerDrawer(c: Customer, acctList: Account[], onChange: () => vo
 
       <div class="section-head section">
         <div class="section-title">Accounts <span class="text-muted" style="font-weight:400">· ${own.length}</span></div>
-        <button class="btn btn-secondary btn-sm" data-open-account>${icon('plus', 14)} Open account</button>
+        ${isAdmin() ? `<button class="btn btn-secondary btn-sm" data-open-account>${icon('plus', 14)} Open account</button>` : ''}
       </div>
       <div class="card">
         ${own.length ? `<div class="list">${own.map((a) => `
@@ -252,14 +252,14 @@ function openCustomerDrawer(c: Customer, acctList: Account[], onChange: () => vo
       </div>`,
     footer: `
       <button class="btn btn-secondary" data-close>Close</button>
-      <button class="btn btn-primary" data-edit>${icon('pencil', 16)} Edit details</button>`,
+      ${canManageCustomers() ? `<button class="btn btn-primary" data-edit>${icon('pencil', 16)} Edit details</button>` : ''}`,
   });
 
-  m.el.querySelector('[data-edit]')!.addEventListener('click', () => {
+  m.el.querySelector('[data-edit]')?.addEventListener('click', () => {
     m.close();
     openCustomerForm(c, onChange);
   });
-  m.el.querySelector('[data-open-account]')!.addEventListener('click', () => {
+  m.el.querySelector('[data-open-account]')?.addEventListener('click', () => {
     m.close();
     openAccountForm(null, onChange, c.customerId);
   });

@@ -1,5 +1,6 @@
 package com.chandru.bankmanagement.controller;
 
+import com.chandru.bankmanagement.security.Roles;
 import com.chandru.bankmanagement.service.AdminSyncService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,7 +26,7 @@ public class AdminSyncController {
         this.adminSyncService = adminSyncService;
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
+    @PreAuthorize(Roles.STAFF)
     @PostMapping("/sync-customers")
     public Map<String, Object> syncCustomers() {
         int synced = adminSyncService.syncAllCustomers();

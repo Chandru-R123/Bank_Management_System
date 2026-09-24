@@ -1,4 +1,4 @@
-import { accounts, customers, transactions, isAdmin } from '../api';
+import { accounts, customers, transactions, isAdmin, canTransact } from '../api';
 import type { Account, AccountRequest, Customer } from '../api';
 import { icon } from '../icons';
 import {
@@ -20,8 +20,8 @@ export async function renderAccounts(container: HTMLElement) {
         </div>
         <div class="page-actions">
           <button class="btn btn-secondary" id="acc-export" disabled>${icon('download', 16)} Export</button>
-          <button class="btn btn-secondary" id="acc-transfer">${icon('transfer', 16)} Transfer</button>
-          <button class="btn btn-primary" id="acc-add">${icon('plus', 16)} Open account</button>
+          ${canTransact() ? `<button class="btn btn-secondary" id="acc-transfer">${icon('transfer', 16)} Transfer</button>` : ''}
+          ${isAdmin() ? `<button class="btn btn-primary" id="acc-add">${icon('plus', 16)} Open account</button>` : ''}
         </div>
       </div>
 
@@ -56,8 +56,8 @@ export async function renderAccounts(container: HTMLElement) {
   const content = document.getElementById('acc-content')!;
   const exportBtn = document.getElementById('acc-export') as HTMLButtonElement;
 
-  document.getElementById('acc-add')!.addEventListener('click', () => openAccountForm(null, loadData));
-  document.getElementById('acc-transfer')!.addEventListener('click', () =>
+  document.getElementById('acc-add')?.addEventListener('click', () => openAccountForm(null, loadData));
+  document.getElementById('acc-transfer')?.addEventListener('click', () =>
     openTransferModal(list, null, loadData, { withOwner: true }));
   document.getElementById('acc-search')!.addEventListener('input', debounce((e: Event) => {
     query = (e.target as HTMLInputElement).value.trim().toLowerCase();
@@ -113,10 +113,10 @@ export async function renderAccounts(container: HTMLElement) {
 
     if (list.length === 0) {
       content.innerHTML = emptyState({
-        icon: 'bank', title: 'No accounts yet', text: 'Open the first account for a customer.',
-        action: `<button class="btn btn-primary btn-sm" data-empty-add>${icon('plus', 14)} Open account</button>`,
+        icon: 'bank', title: 'No accounts yet', text: 'Accounts are opened by an administrator.',
+        action: isAdmin() ? `<button class="btn btn-primary btn-sm" data-empty-add>${icon('plus', 14)} Open account</button>` : '',
       });
-      content.querySelector('[data-empty-add]')!.addEventListener('click', () => openAccountForm(null, loadData));
+      content.querySelector('[data-empty-add]')?.addEventListener('click', () => openAccountForm(null, loadData));
       return;
     }
     if (rows.length === 0) {
@@ -124,6 +124,7 @@ export async function renderAccounts(container: HTMLElement) {
       return;
     }
 
+    const maker = canTransact();
     content.innerHTML = `
       <div class="table-wrap">
         <table class="table">
@@ -144,8 +145,9 @@ export async function renderAccounts(container: HTMLElement) {
                 <td class="num fw-600">${formatCurrency(a.balance)}</td>
                 <td class="actions">
                   <button class="btn-icon" data-act="statement" title="Statement">${icon('file', 16)}</button>
+                  ${maker ? `
                   <button class="btn-icon" data-act="deposit" title="Deposit" ${canCredit(a) ? '' : 'disabled'}>${icon('arrowIn', 16)}</button>
-                  <button class="btn-icon" data-act="withdraw" title="Withdraw" ${canDebit(a) ? '' : 'disabled'}>${icon('arrowOut', 16)}</button>
+                  <button class="btn-icon" data-act="withdraw" title="Withdraw" ${canDebit(a) ? '' : 'disabled'}>${icon('arrowOut', 16)}</button>` : ''}
                   <button class="btn-icon" data-act="more" title="More">${icon('menu', 16)}</button>
                 </td>
               </tr>`).join('')}
@@ -178,9 +180,11 @@ export async function renderAccounts(container: HTMLElement) {
 function accountMenu(a: Account, all: Account[], onChange: () => void): (MenuItem | 'divider')[] {
   const items: (MenuItem | 'divider')[] = [
     { label: 'View details', icon: 'eye', onClick: () => openAccountDrawer(a, all, onChange) },
-    { label: 'Transfer from this account', icon: 'transfer', disabled: !canDebit(a),
-      onClick: () => openTransferModal(all, a.accountId, onChange, { withOwner: true }) },
   ];
+  if (canTransact()) {
+    items.push({ label: 'Transfer from this account', icon: 'transfer', disabled: !canDebit(a),
+      onClick: () => openTransferModal(all, a.accountId, onChange, { withOwner: true }) });
+  }
   if (isAdmin()) {
     items.push(
       'divider',
@@ -263,11 +267,12 @@ function openAccountDrawer(a: Account, all: Account[], onChange: () => void) {
       </div>
 
       <div class="action-grid mt-4">
-        <button class="action-tile" data-a="deposit" ${canCredit(a) ? '' : 'disabled'}>${icon('arrowIn', 18)}Deposit</button>
-        <button class="action-tile" data-a="withdraw" ${canDebit(a) ? '' : 'disabled'}>${icon('arrowOut', 18)}Withdraw</button>
-        <button class="action-tile" data-a="transfer" ${canDebit(a) ? '' : 'disabled'}>${icon('transfer', 18)}Transfer</button>
+        <button class="action-tile" data-a="deposit" ${canCredit(a) && canTransact() ? '' : 'disabled'}>${icon('arrowIn', 18)}Deposit</button>
+        <button class="action-tile" data-a="withdraw" ${canDebit(a) && canTransact() ? '' : 'disabled'}>${icon('arrowOut', 18)}Withdraw</button>
+        <button class="action-tile" data-a="transfer" ${canDebit(a) && canTransact() ? '' : 'disabled'}>${icon('transfer', 18)}Transfer</button>
         <button class="action-tile" data-a="statement">${icon('file', 18)}Statement</button>
       </div>
+      ${canTransact() ? '' : `<p class="text-sm text-muted mt-2">Money movements need the MAKER role.</p>`}
 
       ${a.status === 'FROZEN' ? `<div class="callout callout-info mt-4">${icon('snowflake', 16)}<div>This account is frozen. All debits and credits are blocked.</div></div>` : ''}
       ${a.status === 'CLOSED' ? `<div class="callout callout-warn mt-4">${icon('info', 16)}<div>This account is closed. History is retained for records.</div></div>` : ''}

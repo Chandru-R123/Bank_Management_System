@@ -112,8 +112,11 @@ public class SecurityConfig {
 
             // ── Route rules ───────────────────────────────────────────
             .authorizeHttpRequests(auth -> auth
-                // Public: Swagger + OPTIONS pre-flight
+                // Public: health/info, Swagger + OPTIONS pre-flight
                 .requestMatchers(
+                    "/health",
+                    "/api/health",
+                    "/api/info",
                     "/swagger-ui/**",
                     "/v3/api-docs/**",
                     "/actuator/health"

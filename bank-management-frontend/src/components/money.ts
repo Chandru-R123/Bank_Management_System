@@ -1,5 +1,5 @@
 import { accounts } from '../api';
-import type { Account, AccountLookup, Transaction } from '../api';
+import type { Account, AccountLookup, Beneficiary, Transaction } from '../api';
 import { icon } from '../icons';
 import {
   esc, formatCurrency, formatDate, openModal, parseAmount, toast, withBusy,
@@ -192,12 +192,19 @@ export function openCashModal(
  *                        customer, every account for staff)
  * @param ownAccounts     for customers: their accounts (offered as quick
  *                        destinations). Staff pass an empty list.
+ * @param beneficiaries   for customers: saved payees offered in a picker
+ * @param presetToNumber  pre-fill (and verify) this destination account number
  */
 export function openTransferModal(
   sourceAccounts: Account[],
   preselectFromId: number | null,
   onDone: () => void,
-  opts: { ownAccounts?: Account[]; withOwner?: boolean } = {},
+  opts: {
+    ownAccounts?: Account[];
+    withOwner?: boolean;
+    beneficiaries?: Beneficiary[];
+    presetToNumber?: string;
+  } = {},
 ) {
   const sources = sourceAccounts.filter(canDebit);
   if (sources.length === 0) {
@@ -210,6 +217,7 @@ export function openTransferModal(
     return;
   }
   const own = (opts.ownAccounts ?? []).filter(canCredit);
+  const payees = (opts.beneficiaries ?? []).filter((b) => b.canReceive);
   const initial = sources.find((a) => a.accountId === preselectFromId) ?? sources[0];
 
   const m = openModal({
@@ -232,6 +240,12 @@ export function openTransferModal(
         </div>` : ''}
 
         <div class="field" data-field="to" data-mode-panel="other">
+          ${payees.length ? `
+          <label class="field-label" for="tr-payee">Saved beneficiary</label>
+          <select id="tr-payee" class="select">
+            <option value="">— Enter an account number instead —</option>
+            ${payees.map((b) => `<option value="${esc(b.accountNumber)}">${esc(b.nickname)} · ${esc(b.accountNumber)}</option>`).join('')}
+          </select>` : ''}
           <label class="field-label" for="tr-to-number">Beneficiary account number<span class="req">*</span></label>
           <div class="flex gap-2">
             <input id="tr-to-number" class="input mono" placeholder="e.g. SB-12345678" autocomplete="off" style="text-transform:uppercase" />
@@ -330,6 +344,20 @@ export function openTransferModal(
 
   const verifyBtn = root.querySelector<HTMLButtonElement>('[data-verify]')!;
   verifyBtn.addEventListener('click', () => withBusy(verifyBtn, verify));
+
+  const payeeEl = root.querySelector<HTMLSelectElement>('#tr-payee');
+  payeeEl?.addEventListener('change', () => {
+    numberEl.value = payeeEl.value;
+    if (payeeEl.value) void withBusy(verifyBtn, verify);
+    else { verified = null; benEl.innerHTML = ''; }
+  });
+  if (opts.presetToNumber) {
+    numberEl.value = opts.presetToNumber;
+    if (payeeEl && payees.some((b) => b.accountNumber === opts.presetToNumber)) {
+      payeeEl.value = opts.presetToNumber;
+    }
+    void withBusy(verifyBtn, verify);
+  }
   numberEl.addEventListener('input', () => { verified = null; benEl.innerHTML = ''; setFieldError(root, 'to', null); });
   amountEl.addEventListener('input', () => setFieldError(root, 'amount', null));
   wireQuickAmounts(root);

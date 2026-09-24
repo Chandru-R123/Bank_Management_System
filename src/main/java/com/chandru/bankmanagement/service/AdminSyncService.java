@@ -31,7 +31,7 @@ import java.util.Set;
  *        users mapped to CUSTOMER directly
  *      + users holding default-roles-{realm} (self-registered users get
  *        CUSTOMER through this composite, not as a direct mapping)
- *      − users holding ADMIN or EMPLOYEE (staff are never customers)
+ *      − users holding ADMIN, EMPLOYEE, MAKER, CHECKER or TPP (never customers)
  *   3. For each user:
  *      - If keycloak_sub already in DB → skip (already synced)
  *      - If email already in DB → link the keycloak_sub
@@ -86,14 +86,21 @@ public class AdminSyncService {
             String firstName = str(user.get("firstName"));
             String lastName  = str(user.get("lastName"));
             String username  = str(user.get("username"));
+            String phone     = attribute(user, "phone");
+            String address   = attribute(user, "address");
 
             if (sub == null) continue;
 
             String name = buildName(firstName, lastName, username, email);
 
             try {
-                // 1. Already linked by sub
-                if (customerRepository.findByKeycloakSub(sub).isPresent()) {
+                // 1. Already linked by sub — only fill in missing contact details
+                var bySub = customerRepository.findByKeycloakSub(sub);
+                if (bySub.isPresent()) {
+                    if (fillContactDetails(bySub.get(), phone, address)) {
+                        customerRepository.save(bySub.get());
+                        synced++;
+                    }
                     continue;
                 }
 
@@ -103,6 +110,7 @@ public class AdminSyncService {
                     if (byEmail.isPresent()) {
                         Customer c = byEmail.get();
                         c.setKeycloakSub(sub);
+                        fillContactDetails(c, phone, address);
                         customerRepository.save(c);
                         log.info("AdminSync: linked sub to existing customer id={}", c.getCustomerId());
                         synced++;
@@ -115,8 +123,8 @@ public class AdminSyncService {
                 c.setKeycloakSub(sub);
                 c.setName(name);
                 c.setEmail(!isBlank(email) ? email.toLowerCase() : sub + "@pending.local");
-                c.setPhone("");
-                c.setAddress("");
+                c.setPhone(phone != null ? phone : "");
+                c.setAddress(address != null ? address : "");
                 customerRepository.save(c);
                 log.info("AdminSync: created new customer '{}' for sub={}", c.getName(), sub);
                 synced++;
@@ -169,10 +177,14 @@ public class AdminSyncService {
         }
 
         Set<String> staffIds = new HashSet<>();
-        for (String staffRole : List.of("ADMIN", "EMPLOYEE")) {
+        for (String staffRole : List.of("ADMIN", "EMPLOYEE", "MAKER", "CHECKER")) {
             for (Map<String, Object> u : getRoleUsers(token, staffRole)) {
                 staffIds.add(str(u.get("id")));
             }
+        }
+        // Third-party provider apps are not bank customers either
+        for (Map<String, Object> u : getRoleUsers(token, "TPP")) {
+            staffIds.add(str(u.get("id")));
         }
         staffIds.forEach(byId::remove);
         byId.remove(null);
@@ -192,7 +204,8 @@ public class AdminSyncService {
         try {
             for (int first = 0; ; first += PAGE_SIZE) {
                 String url = keycloakServerUrl + "/admin/realms/" + realm
-                        + "/roles/" + role + "/users?first=" + first + "&max=" + PAGE_SIZE;
+                        + "/roles/" + role + "/users?briefRepresentation=false"
+                        + "&first=" + first + "&max=" + PAGE_SIZE;
 
                 ResponseEntity<List> resp = restTemplate.exchange(
                         url, HttpMethod.GET,
@@ -218,6 +231,30 @@ public class AdminSyncService {
         if (email != null && email.contains("@"))
             return email.substring(0, email.indexOf('@'));
         return "Customer";
+    }
+
+    /** Keycloak returns custom attributes as {"phone": ["9876543210"]}. */
+    private static String attribute(Map<String, Object> user, String name) {
+        if (!(user.get("attributes") instanceof Map<?, ?> attrs)) return null;
+        Object v = attrs.get(name);
+        if (v instanceof List<?> list && !list.isEmpty() && list.get(0) != null) {
+            String s = String.valueOf(list.get(0)).trim();
+            return s.isEmpty() ? null : s;
+        }
+        return null;
+    }
+
+    private static boolean fillContactDetails(Customer c, String phone, String address) {
+        boolean changed = false;
+        if (phone != null && (c.getPhone() == null || c.getPhone().isBlank())) {
+            c.setPhone(phone);
+            changed = true;
+        }
+        if (address != null && (c.getAddress() == null || c.getAddress().isBlank())) {
+            c.setAddress(address);
+            changed = true;
+        }
+        return changed;
     }
 
     private static String str(Object o) {

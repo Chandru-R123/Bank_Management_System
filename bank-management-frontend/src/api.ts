@@ -1,6 +1,11 @@
 import keycloak from './keycloak';
 
-const BASE = '/api';
+/**
+ * API base URL — configurable per environment (Week 3 requirement).
+ *   Docker / NGINX gateway:  /api                      (default, same origin)
+ *   Direct to Spring Boot:   http://localhost:8081/api (set in .env.local)
+ */
+const BASE = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '');
 
 /**
  * Returns a fresh access token, refreshing silently if it expires within
@@ -20,12 +25,14 @@ async function request<T>(
   method: string,
   path: string,
   body?: unknown,
+  extraHeaders: Record<string, string> = {},
 ): Promise<T> {
   const token = await getToken();
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token}`,
+    ...extraHeaders,
   };
 
   let res: Response;
@@ -98,9 +105,29 @@ export function isAdmin(): boolean {
   return hasRole('ADMIN');
 }
 
-/** ADMIN or EMPLOYEE — can see every customer and account. */
+/** Anyone working at the bank — can see every customer and account. */
 export function isStaff(): boolean {
+  return ['ADMIN', 'EMPLOYEE', 'MAKER', 'CHECKER'].some(hasRole);
+}
+
+/** May move money on any account (ADMIN or MAKER). */
+export function canTransact(): boolean {
+  return hasRole('ADMIN') || hasRole('MAKER');
+}
+
+/** May perform verification actions (ADMIN or CHECKER). */
+export function isChecker(): boolean {
+  return hasRole('ADMIN') || hasRole('CHECKER');
+}
+
+/** May create / edit customer KYC records. */
+export function canManageCustomers(): boolean {
   return hasRole('ADMIN') || hasRole('EMPLOYEE');
+}
+
+/** Third-Party Provider (fintech app) using Open Banking. */
+export function isTpp(): boolean {
+  return hasRole('TPP') && !isStaff();
 }
 
 export function getUsername(): string {
@@ -115,7 +142,10 @@ export function getDisplayName(): string {
 
 export function getRoleLabel(): string {
   if (isAdmin()) return 'Administrator';
+  const staff = [hasRole('MAKER') && 'Maker', hasRole('CHECKER') && 'Checker'].filter(Boolean);
+  if (staff.length) return `Employee · ${staff.join(' & ')}`;
   if (hasRole('EMPLOYEE')) return 'Employee';
+  if (isTpp()) return 'Third-party provider';
   return 'Customer';
 }
 
@@ -221,9 +251,95 @@ export interface Transaction {
   performedBy: string | null;
 }
 
+export interface PostTransaction {
+  accountId?: number;
+  type: 'DEPOSIT' | 'WITHDRAW';
+  amount: number;
+  description?: string;
+}
+
 export const transactions = {
+  post:         (data: PostTransaction) => request<Transaction>('POST', '/transactions', data),
   getAll:       ()                  => request<Transaction[]>('GET', '/transactions'),
   getMy:        ()                  => request<Transaction[]>('GET', '/transactions/my'),
   getByAccount: (accountId: number) => request<Transaction[]>('GET', `/accounts/${accountId}/transactions`),
   getById:      (id: number)        => request<Transaction>  ('GET', `/transactions/${id}`),
+};
+
+// ── Beneficiaries ─────────────────────────────────────────────────────────────
+
+export interface Beneficiary {
+  beneficiaryId: number;
+  nickname: string;
+  accountNumber: string;
+  holderName: string;
+  accountType: string | null;
+  canReceive: boolean;
+  customerId: number;
+  customerName: string;
+  createdAt: string | null;
+}
+export interface BeneficiaryRequest {
+  nickname: string;
+  accountNumber: string;
+  customerId?: number;
+}
+
+export const beneficiaries = {
+  getAll:  ()                         => request<Beneficiary[]>('GET', '/beneficiaries'),
+  create:  (data: BeneficiaryRequest) => request<Beneficiary>  ('POST', '/beneficiaries', data),
+  delete:  (id: number)               => request<unknown>      ('DELETE', `/beneficiaries/${id}`),
+};
+
+// ── Open Banking consents ─────────────────────────────────────────────────────
+
+export type ConsentStatus = 'AWAITING_AUTHORISATION' | 'AUTHORISED' | 'REJECTED' | 'REVOKED' | 'EXPIRED';
+export type ConsentPermission = 'READ_ACCOUNTS' | 'READ_BALANCES' | 'READ_TRANSACTIONS';
+
+export interface Consent {
+  consentId: string;
+  status: ConsentStatus;
+  customerId: number;
+  customerName: string;
+  tppUsername: string;
+  tppName: string;
+  purpose: string;
+  permissions: ConsentPermission[];
+  accounts: { accountId: number; accountNumber: string; accountType: string }[];
+  createdAt: string;
+  expiresAt: string;
+  statusUpdatedAt: string | null;
+  statusUpdatedBy: string | null;
+}
+export interface ConsentRequest {
+  customerEmail: string;
+  permissions: ConsentPermission[];
+  purpose: string;
+  validityDays: number;
+  tppName?: string;
+}
+export interface OpenBankingAccount {
+  accountId: number;
+  accountNumber: string;
+  accountType: string;
+  status: string;
+  holderName: string;
+  balance: number | null;
+  currency: string;
+}
+
+export const consents = {
+  getAll:   ()                                => request<Consent[]>('GET', '/consents'),
+  create:   (data: ConsentRequest)            => request<Consent>  ('POST', '/consents', data),
+  approve:  (id: string, accountIds: number[]) => request<Consent> ('POST', `/consents/${encodeURIComponent(id)}/approve`, { accountIds }),
+  reject:   (id: string)                      => request<Consent>  ('POST', `/consents/${encodeURIComponent(id)}/reject`),
+  revoke:   (id: string)                      => request<Consent>  ('POST', `/consents/${encodeURIComponent(id)}/revoke`),
+};
+
+/** Account Information APIs — every call carries the consent id header. */
+export const openBanking = {
+  accounts: (consentId: string) =>
+    request<OpenBankingAccount[]>('GET', '/open-banking/accounts', undefined, { 'x-consent-id': consentId }),
+  transactions: (consentId: string, accountId: number) =>
+    request<Transaction[]>('GET', `/open-banking/accounts/${accountId}/transactions`, undefined, { 'x-consent-id': consentId }),
 };

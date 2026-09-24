@@ -26,11 +26,13 @@ public final class SecurityUtils {
 
     public static Actor actor(Jwt jwt) {
         List<String> roles = roles(jwt);
-        boolean admin = roles.contains("ADMIN");
-        boolean staff = admin || roles.contains("EMPLOYEE");
+        boolean admin   = roles.contains("ADMIN");
+        boolean maker   = admin || roles.contains("MAKER");
+        boolean checker = admin || roles.contains("CHECKER");
+        boolean staff   = maker || checker || roles.contains("EMPLOYEE");
         String username = jwt.getClaimAsString("preferred_username");
         return new Actor(jwt.getSubject(),
                 username != null ? username : jwt.getSubject(),
-                admin, staff);
+                admin, staff, maker, checker, roles.contains("TPP"));
     }
 }

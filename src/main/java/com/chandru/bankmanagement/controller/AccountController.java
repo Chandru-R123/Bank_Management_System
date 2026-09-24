@@ -6,9 +6,11 @@ import com.chandru.bankmanagement.dto.AccountResponse;
 import com.chandru.bankmanagement.dto.TransactionRequest;
 import com.chandru.bankmanagement.dto.TransactionResponse;
 import com.chandru.bankmanagement.dto.TransferRequest;
+import com.chandru.bankmanagement.security.Roles;
 import com.chandru.bankmanagement.security.SecurityUtils;
 import com.chandru.bankmanagement.service.AccountService;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -18,8 +20,9 @@ import java.util.List;
 
 /**
  * Roles:
- *   ADMIN    — everything, including freeze / unfreeze / close
- *   EMPLOYEE — view all accounts, open accounts, deposit / withdraw / transfer
+ *   ADMIN    — everything: open, edit, freeze / unfreeze / close
+ *   MAKER    — move money on any account
+ *   EMPLOYEE / CHECKER — view all accounts
  *   CUSTOMER — own accounts only
  */
 @RestController
@@ -32,10 +35,11 @@ public class AccountController {
         this.accountService = accountService;
     }
 
-    // ── STAFF: open account ────────────────────────────────────────────
+    // ── ADMIN: open account ────────────────────────────────────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
+    @PreAuthorize(Roles.ADMIN)
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     public AccountResponse createAccount(@Valid @RequestBody AccountRequest request,
                                          @AuthenticationPrincipal Jwt jwt) {
         return accountService.createAccount(request, SecurityUtils.actor(jwt));
@@ -52,7 +56,7 @@ public class AccountController {
 
     // ── ANY ROLE: verify a beneficiary before transferring ─────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE', 'CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE', 'MAKER', 'CHECKER', 'CUSTOMER')")
     @GetMapping("/lookup")
     public AccountLookupResponse lookup(@RequestParam("number") String number) {
         return accountService.lookup(number);
@@ -60,7 +64,7 @@ public class AccountController {
 
     // ── STAFF: all accounts ────────────────────────────────────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
+    @PreAuthorize(Roles.STAFF)
     @GetMapping
     public List<AccountResponse> getAllAccounts() {
         return accountService.getAllAccounts();
@@ -68,7 +72,7 @@ public class AccountController {
 
     // ── STAFF: one account ─────────────────────────────────────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
+    @PreAuthorize(Roles.STAFF)
     @GetMapping("/{id}")
     public AccountResponse getAccountById(@PathVariable Long id) {
         return accountService.getAccountById(id);
@@ -115,21 +119,21 @@ public class AccountController {
         return accountService.unfreeze(id, SecurityUtils.actor(jwt));
     }
 
-    // ── ALL ROLES: deposit ─────────────────────────────────────────────
+    // ── MAKER / CUSTOMER: deposit ─────────────────────────────────────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE', 'CUSTOMER')")
+    @PreAuthorize(Roles.TRANSACTORS)
     @PostMapping("/{id}/deposit")
     public AccountResponse deposit(@PathVariable Long id,
                                    @Valid @RequestBody TransactionRequest request,
                                    @AuthenticationPrincipal Jwt jwt) {
-        // Staff have no ownership restriction; CUSTOMER is scoped to own account
+        // MAKER/ADMIN have no ownership restriction; CUSTOMER is scoped to own account
         return accountService.deposit(id, request.getAmount(),
                 request.getDescription(), SecurityUtils.actor(jwt));
     }
 
-    // ── ALL ROLES: withdraw ────────────────────────────────────────────
+    // ── MAKER / CUSTOMER: withdraw ────────────────────────────────────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE', 'CUSTOMER')")
+    @PreAuthorize(Roles.TRANSACTORS)
     @PostMapping("/{id}/withdraw")
     public AccountResponse withdraw(@PathVariable Long id,
                                     @Valid @RequestBody TransactionRequest request,
@@ -138,10 +142,11 @@ public class AccountController {
                 request.getDescription(), SecurityUtils.actor(jwt));
     }
 
-    // ── ALL ROLES: transfer ────────────────────────────────────────────
+    // ── MAKER / CUSTOMER: transfer ────────────────────────────────────────────
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE', 'CUSTOMER')")
+    @PreAuthorize(Roles.TRANSACTORS)
     @PostMapping("/transfer")
+    @ResponseStatus(HttpStatus.CREATED)
     public TransactionResponse transfer(@Valid @RequestBody TransferRequest request,
                                         @AuthenticationPrincipal Jwt jwt) {
         return accountService.transferMoney(request, SecurityUtils.actor(jwt));

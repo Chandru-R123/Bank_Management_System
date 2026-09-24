@@ -1,6 +1,6 @@
 import './style.css';
 import keycloak from './keycloak';
-import { customers, getDisplayName, getRoleLabel, hasRole, isStaff } from './api';
+import { customers, getDisplayName, getRoleLabel, hasRole, isStaff, isTpp } from './api';
 import { icon } from './icons';
 import type { IconName } from './icons';
 import { esc, initials, toast, todayLong, errorMessage } from './utils';
@@ -11,6 +11,9 @@ import { renderTransactions }   from './pages/transactions';
 import { renderMyAccounts }     from './pages/my-accounts';
 import { renderMyTransactions } from './pages/my-transactions';
 import { renderProfile }        from './pages/profile';
+import { renderBeneficiaries }  from './pages/beneficiaries';
+import { renderConsents }       from './pages/consents';
+import { renderTppPortal }      from './pages/tpp';
 
 const app = document.getElementById('app')!;
 
@@ -37,20 +40,32 @@ const staffRoutes: Record<string, Route> = {
   customers:    { title: 'Customers',    crumb: 'KYC records & relationships',     icon: 'users',     render: renderCustomers },
   accounts:     { title: 'Accounts',     crumb: 'Open, service and close accounts', icon: 'bank',     render: renderAccounts },
   transactions: { title: 'Transactions', crumb: 'Ledger of every movement',         icon: 'receipt',   render: renderTransactions },
+  beneficiaries:{ title: 'Beneficiaries', crumb: 'Saved payees of every customer',  icon: 'userPlus',  render: renderBeneficiaries },
+  consents:     { title: 'Consents',     crumb: 'Open Banking access requests',     icon: 'shield',    render: renderConsents },
 };
 
 const customerRoutes: Record<string, Route> = {
   home:              { title: 'My Accounts', crumb: 'Balances & quick actions', icon: 'wallet',  render: renderMyAccounts },
   'my-transactions': { title: 'Transactions', crumb: 'Your account activity',   icon: 'receipt', render: renderMyTransactions },
+  beneficiaries:     { title: 'Beneficiaries', crumb: 'People you pay',         icon: 'userPlus', render: renderBeneficiaries },
+  apps:              { title: 'Connected apps', crumb: 'Open Banking consents', icon: 'shield', render: renderConsents },
   profile:           { title: 'Profile',      crumb: 'Contact details & security', icon: 'user', render: renderProfile },
 };
 
+const tppRoutes: Record<string, Route> = {
+  portal: { title: 'Open Banking', crumb: 'Consents & account information', icon: 'shield', render: renderTppPortal },
+};
+
 function routes(): Record<string, Route> {
-  return isStaff() ? staffRoutes : customerRoutes;
+  if (isStaff()) return staffRoutes;
+  if (isTpp()) return tppRoutes;
+  return customerRoutes;
 }
 
 function defaultPage(): string {
-  return isStaff() ? 'dashboard' : 'home';
+  if (isStaff()) return 'dashboard';
+  if (isTpp()) return 'portal';
+  return 'home';
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
@@ -82,7 +97,7 @@ keycloak
     // Link this Keycloak login to a customer record (idempotent). Staff also
     // inherit CUSTOMER through Keycloak's default roles — they must not be
     // turned into customers, so only pure customers are synced.
-    if (hasRole('CUSTOMER') && !isStaff()) {
+    if (hasRole('CUSTOMER') && !isStaff() && !isTpp()) {
       try {
         await customers.sync();
       } catch (err) {
@@ -123,11 +138,11 @@ function buildShell() {
           <div class="brand-mark">${icon('bank', 20)}</div>
           <div>
             <div class="brand-name">State Bank</div>
-            <div class="brand-sub">${isStaff() ? 'Branch Console' : 'Online Banking'}</div>
+            <div class="brand-sub">${isStaff() ? 'Branch Console' : isTpp() ? 'Developer Portal' : 'Online Banking'}</div>
           </div>
         </div>
         <nav class="sidebar-nav">
-          <div class="nav-label">${isStaff() ? 'Operations' : 'Banking'}</div>
+          <div class="nav-label">${isStaff() ? 'Operations' : isTpp() ? 'Open Banking' : 'Banking'}</div>
           ${nav}
         </nav>
         <div class="sidebar-footer">

@@ -1,4 +1,4 @@
-import { customers, accounts, transactions, getDisplayName } from '../api';
+import { customers, accounts, transactions, getDisplayName, isAdmin, canManageCustomers } from '../api';
 import type { Account, Customer, Transaction } from '../api';
 import { icon } from '../icons';
 import {
@@ -18,8 +18,8 @@ export async function renderDashboard(container: HTMLElement) {
           <p class="page-desc">Here's what's happening at your branch today.</p>
         </div>
         <div class="page-actions">
-          <button class="btn btn-secondary" id="dash-new-customer">${icon('userPlus', 16)} New customer</button>
-          <button class="btn btn-primary" id="dash-new-account">${icon('plus', 16)} Open account</button>
+          ${canManageCustomers() ? `<button class="btn btn-secondary" id="dash-new-customer">${icon('userPlus', 16)} New customer</button>` : ''}
+          ${isAdmin() ? `<button class="btn btn-primary" id="dash-new-account">${icon('plus', 16)} Open account</button>` : ''}
         </div>
       </div>
 
@@ -63,8 +63,8 @@ export async function renderDashboard(container: HTMLElement) {
       </div>
     </div>`;
 
-  document.getElementById('dash-new-customer')!.addEventListener('click', () => openCustomerForm(null, load));
-  document.getElementById('dash-new-account')!.addEventListener('click', () => openAccountForm(null, load));
+  document.getElementById('dash-new-customer')?.addEventListener('click', () => openCustomerForm(null, load));
+  document.getElementById('dash-new-account')?.addEventListener('click', () => openAccountForm(null, load));
 
   // Pull any new Keycloak self-registrations into the DB; refresh if something changed.
   customers.adminSync()

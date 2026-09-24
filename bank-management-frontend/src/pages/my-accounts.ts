@@ -1,5 +1,5 @@
-import { accounts, transactions, customers, getDisplayName } from '../api';
-import type { Account, Customer, Transaction } from '../api';
+import { accounts, transactions, customers, beneficiaries, getDisplayName } from '../api';
+import type { Account, Beneficiary, Customer, Transaction } from '../api';
 import { icon } from '../icons';
 import {
   esc, formatCurrency, greeting, emptyState, errorState, skeletonRows,
@@ -48,11 +48,12 @@ export async function renderMyAccounts(container: HTMLElement) {
     </div>`;
 
   let acctList: Account[] = [];
+  let payees: Beneficiary[] = [];
 
   container.querySelectorAll<HTMLButtonElement>('[data-q]').forEach((b) => {
     b.addEventListener('click', () => {
       switch (b.dataset.q) {
-        case 'transfer': openTransferModal(acctList, null, loadAll, { ownAccounts: acctList }); break;
+        case 'transfer': openTransferModal(acctList, null, loadAll, { ownAccounts: acctList, beneficiaries: payees }); break;
         case 'deposit':  openCashModal('deposit', acctList, null, loadAll); break;
         case 'withdraw': openCashModal('withdraw', acctList, null, loadAll); break;
       }
@@ -63,11 +64,13 @@ export async function renderMyAccounts(container: HTMLElement) {
 
   async function loadAll() {
     if (!document.getElementById('hero')) return;
-    const [profileR, acctR, txR] = await Promise.allSettled([
+    const [profileR, acctR, txR, payeeR] = await Promise.allSettled([
       customers.getMe(),
       accounts.getMy(),
       transactions.getMy(),
+      beneficiaries.getAll(),
     ]);
+    payees = payeeR.status === 'fulfilled' ? payeeR.value : [];
     if (!document.getElementById('hero')) return;
 
     const profile = profileR.status === 'fulfilled' ? profileR.value : null;
@@ -176,7 +179,7 @@ export async function renderMyAccounts(container: HTMLElement) {
         switch (btn?.dataset.act) {
           case 'deposit':  openCashModal('deposit', acctList, acc.accountId, loadAll); break;
           case 'withdraw': openCashModal('withdraw', acctList, acc.accountId, loadAll); break;
-          case 'transfer': openTransferModal(acctList, acc.accountId, loadAll, { ownAccounts: acctList }); break;
+          case 'transfer': openTransferModal(acctList, acc.accountId, loadAll, { ownAccounts: acctList, beneficiaries: payees }); break;
           default:         openStatement(acc);
         }
       });
