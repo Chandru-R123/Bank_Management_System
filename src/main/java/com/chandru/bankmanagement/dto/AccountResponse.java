@@ -1,12 +1,18 @@
 package com.chandru.bankmanagement.dto;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
 public class AccountResponse {
 
     private Long accountId;
     private String accountNumber;
     private String accountType;
-    private Double balance;
+    private BigDecimal balance;
+    private Long customerId;
     private String customerName;
+    private String status;
+    private LocalDateTime createdAt;
 
     public AccountResponse() {
     }
@@ -14,13 +20,19 @@ public class AccountResponse {
     public AccountResponse(Long accountId,
                            String accountNumber,
                            String accountType,
-                           Double balance,
-                           String customerName) {
+                           BigDecimal balance,
+                           Long customerId,
+                           String customerName,
+                           String status,
+                           LocalDateTime createdAt) {
         this.accountId = accountId;
         this.accountNumber = accountNumber;
         this.accountType = accountType;
         this.balance = balance;
+        this.customerId = customerId;
         this.customerName = customerName;
+        this.status = status;
+        this.createdAt = createdAt;
     }
 
     public Long getAccountId() {
@@ -47,12 +59,20 @@ public class AccountResponse {
         this.accountType = accountType;
     }
 
-    public Double getBalance() {
+    public BigDecimal getBalance() {
         return balance;
     }
 
-    public void setBalance(Double balance) {
+    public void setBalance(BigDecimal balance) {
         this.balance = balance;
+    }
+
+    public Long getCustomerId() {
+        return customerId;
+    }
+
+    public void setCustomerId(Long customerId) {
+        this.customerId = customerId;
     }
 
     public String getCustomerName() {
@@ -61,5 +81,21 @@ public class AccountResponse {
 
     public void setCustomerName(String customerName) {
         this.customerName = customerName;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
     }
 }

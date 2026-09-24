@@ -7,32 +7,46 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Syncs ALL Keycloak users that have the CUSTOMER role into PostgreSQL.
  *
- * Called when the admin opens the Customers page — so any user who
+ * Called when staff open the Customers page — so any user who
  * registered via Keycloak's registration form appears immediately,
  * even before they have ever logged into the application.
  *
  * Flow:
- *   1. Get a service-account token from Keycloak (client-credentials)
- *   2. Fetch all users in the bank-management realm
- *   3. For each user that has the CUSTOMER role:
+ *   1. Get an admin token from Keycloak's master realm (admin-cli)
+ *   2. Collect customer candidates:
+ *        users mapped to CUSTOMER directly
+ *      + users holding default-roles-{realm} (self-registered users get
+ *        CUSTOMER through this composite, not as a direct mapping)
+ *      − users holding ADMIN or EMPLOYEE (staff are never customers)
+ *   3. For each user:
  *      - If keycloak_sub already in DB → skip (already synced)
  *      - If email already in DB → link the keycloak_sub
  *      - Otherwise → create a new Customer row
+ *
+ * Deliberately NOT @Transactional: each save commits on its own, so one
+ * bad record (e.g. a duplicate email) cannot roll back the whole sync.
  */
 @Service
 public class AdminSyncService {
 
     private static final Logger log =
             LoggerFactory.getLogger(AdminSyncService.class);
+
+    private static final int PAGE_SIZE = 200;
 
     private final CustomerRepository customerRepository;
     private final RestTemplate        restTemplate;
@@ -54,7 +68,6 @@ public class AdminSyncService {
         this.restTemplate        = new RestTemplate();
     }
 
-    @Transactional
     public int syncAllCustomers() {
 
         String token = getMasterAdminToken();
@@ -63,21 +76,19 @@ public class AdminSyncService {
             return 0;
         }
 
-        List<Map<String, Object>> allUsers = getRealmUsers(token);
-        log.info("AdminSync: found {} users in Keycloak realm", allUsers.size());
+        List<Map<String, Object>> customers = getCustomerUsers(token);
+        log.info("AdminSync: found {} CUSTOMER users in Keycloak realm", customers.size());
 
         int synced = 0;
-        for (Map<String, Object> user : allUsers) {
-            String sub   = (String) user.get("id");
-            String email = (String) user.get("email");
-            String firstName = (String) user.getOrDefault("firstName", "");
-            String lastName  = (String) user.getOrDefault("lastName",  "");
-            String username  = (String) user.getOrDefault("username",  "");
+        for (Map<String, Object> user : customers) {
+            String sub       = str(user.get("id"));
+            String email     = str(user.get("email"));
+            String firstName = str(user.get("firstName"));
+            String lastName  = str(user.get("lastName"));
+            String username  = str(user.get("username"));
 
-            // Skip users with no CUSTOMER role
-            if (!hasCustomerRole(token, sub)) continue;
+            if (sub == null) continue;
 
-            // Build display name
             String name = buildName(firstName, lastName, username, email);
 
             try {
@@ -87,12 +98,11 @@ public class AdminSyncService {
                 }
 
                 // 2. Existing row by email — link the sub
-                if (email != null && !email.isBlank()) {
-                    var byEmail = customerRepository.findByEmail(email);
+                if (!isBlank(email)) {
+                    var byEmail = customerRepository.findByEmailIgnoreCase(email);
                     if (byEmail.isPresent()) {
                         Customer c = byEmail.get();
                         c.setKeycloakSub(sub);
-                        if (name != null && !name.isBlank()) c.setName(name);
                         customerRepository.save(c);
                         log.info("AdminSync: linked sub to existing customer id={}", c.getCustomerId());
                         synced++;
@@ -103,9 +113,8 @@ public class AdminSyncService {
                 // 3. Brand new — create Customer row
                 Customer c = new Customer();
                 c.setKeycloakSub(sub);
-                c.setName(name != null && !name.isBlank() ? name : username);
-                c.setEmail(email != null && !email.isBlank()
-                        ? email : sub + "@pending.local");
+                c.setName(name);
+                c.setEmail(!isBlank(email) ? email.toLowerCase() : sub + "@pending.local");
                 c.setPhone("");
                 c.setAddress("");
                 customerRepository.save(c);
@@ -123,6 +132,7 @@ public class AdminSyncService {
 
     // ── Keycloak Admin API calls ───────────────────────────────────────────
 
+    @SuppressWarnings("rawtypes")
     private String getMasterAdminToken() {
         try {
             String url = keycloakServerUrl
@@ -131,64 +141,72 @@ public class AdminSyncService {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 
-            String body = "grant_type=password"
-                    + "&client_id=admin-cli"
-                    + "&username=" + adminUsername
-                    + "&password=" + adminPassword;
+            // Form-encoded properly so passwords with &, = or % still work
+            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+            form.add("grant_type", "password");
+            form.add("client_id", "admin-cli");
+            form.add("username", adminUsername);
+            form.add("password", adminPassword);
 
             ResponseEntity<Map> resp = restTemplate.exchange(
                     url, HttpMethod.POST,
-                    new HttpEntity<>(body, headers), Map.class);
+                    new HttpEntity<>(form, headers), Map.class);
 
-            return (String) resp.getBody().get("access_token");
+            return resp.getBody() != null ? (String) resp.getBody().get("access_token") : null;
         } catch (Exception e) {
             log.error("AdminSync: failed to get admin token: {}", e.getMessage());
             return null;
         }
     }
 
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> getRealmUsers(String token) {
-        try {
-            String url = keycloakServerUrl
-                    + "/admin/realms/" + realm + "/users?max=500";
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(token);
-
-            ResponseEntity<List> resp = restTemplate.exchange(
-                    url, HttpMethod.GET,
-                    new HttpEntity<>(headers), List.class);
-
-            return resp.getBody() != null ? resp.getBody() : List.of();
-        } catch (Exception e) {
-            log.error("AdminSync: failed to fetch users: {}", e.getMessage());
-            return List.of();
+    private List<Map<String, Object>> getCustomerUsers(String token) {
+        Map<String, Map<String, Object>> byId = new LinkedHashMap<>();
+        for (Map<String, Object> u : getRoleUsers(token, "CUSTOMER")) {
+            byId.put(str(u.get("id")), u);
         }
+        for (Map<String, Object> u : getRoleUsers(token, "default-roles-" + realm)) {
+            byId.putIfAbsent(str(u.get("id")), u);
+        }
+
+        Set<String> staffIds = new HashSet<>();
+        for (String staffRole : List.of("ADMIN", "EMPLOYEE")) {
+            for (Map<String, Object> u : getRoleUsers(token, staffRole)) {
+                staffIds.add(str(u.get("id")));
+            }
+        }
+        staffIds.forEach(byId::remove);
+        byId.remove(null);
+        return new ArrayList<>(byId.values());
     }
 
-    @SuppressWarnings("unchecked")
-    private boolean hasCustomerRole(String token, String userId) {
+    /**
+     * GET /admin/realms/{realm}/roles/{role}/users — one request per page
+     * instead of one role-mapping request per user.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private List<Map<String, Object>> getRoleUsers(String token, String role) {
+        List<Map<String, Object>> all = new ArrayList<>();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setBearerAuth(token);
+
         try {
-            String url = keycloakServerUrl
-                    + "/admin/realms/" + realm
-                    + "/users/" + userId + "/role-mappings/realm";
+            for (int first = 0; ; first += PAGE_SIZE) {
+                String url = keycloakServerUrl + "/admin/realms/" + realm
+                        + "/roles/" + role + "/users?first=" + first + "&max=" + PAGE_SIZE;
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(token);
+                ResponseEntity<List> resp = restTemplate.exchange(
+                        url, HttpMethod.GET,
+                        new HttpEntity<>(headers), List.class);
 
-            ResponseEntity<List> resp = restTemplate.exchange(
-                    url, HttpMethod.GET,
-                    new HttpEntity<>(headers), List.class);
-
-            if (resp.getBody() == null) return false;
-
-            return ((List<Map<String, Object>>) resp.getBody())
-                    .stream()
-                    .anyMatch(r -> "CUSTOMER".equals(r.get("name")));
+                List<Map<String, Object>> page = resp.getBody();
+                if (page == null || page.isEmpty()) break;
+                all.addAll(page);
+                if (page.size() < PAGE_SIZE) break;
+            }
         } catch (Exception e) {
-            return false;
+            log.warn("AdminSync: failed to fetch users for role {}: {}", role, e.getMessage());
         }
+        return all;
     }
 
     private String buildName(String firstName, String lastName,
@@ -200,6 +218,10 @@ public class AdminSyncService {
         if (email != null && email.contains("@"))
             return email.substring(0, email.indexOf('@'));
         return "Customer";
+    }
+
+    private static String str(Object o) {
+        return o == null ? null : String.valueOf(o);
     }
 
     private boolean isBlank(String s) {

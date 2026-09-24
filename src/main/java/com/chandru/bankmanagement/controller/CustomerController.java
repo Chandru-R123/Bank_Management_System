@@ -2,6 +2,7 @@ package com.chandru.bankmanagement.controller;
 
 import com.chandru.bankmanagement.dto.CustomerRequest;
 import com.chandru.bankmanagement.dto.CustomerResponse;
+import com.chandru.bankmanagement.dto.ProfileUpdateRequest;
 import com.chandru.bankmanagement.service.CustomerService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -22,18 +23,18 @@ public class CustomerController {
         this.customerService = customerService;
     }
 
-    // ── ADMIN: create ──────────────────────────────────────────────────
+    // ── STAFF: create ──────────────────────────────────────────────────
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
     @PostMapping
     public CustomerResponse createCustomer(
             @Valid @RequestBody CustomerRequest request) {
         return customerService.saveCustomer(request);
     }
 
-    // ── ADMIN: list all ────────────────────────────────────────────────
+    // ── STAFF: list all ────────────────────────────────────────────────
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
     @GetMapping
     public List<CustomerResponse> getAllCustomers() {
         return customerService.getAllCustomers();
@@ -48,17 +49,26 @@ public class CustomerController {
         return customerService.getMyProfile(jwt.getSubject());
     }
 
-    // ── ADMIN: by id ───────────────────────────────────────────────────
+    // ── CUSTOMER: update own contact details ───────────────────────────
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('CUSTOMER')")
+    @PutMapping("/me")
+    public CustomerResponse updateMyProfile(@AuthenticationPrincipal Jwt jwt,
+                                            @Valid @RequestBody ProfileUpdateRequest request) {
+        return customerService.updateMyProfile(jwt.getSubject(), request);
+    }
+
+    // ── STAFF: by id ───────────────────────────────────────────────────
+
+    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
     @GetMapping("/{id}")
     public CustomerResponse getCustomerById(@PathVariable Long id) {
         return customerService.getCustomerById(id);
     }
 
-    // ── ADMIN: update ──────────────────────────────────────────────────
+    // ── STAFF: update ──────────────────────────────────────────────────
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
     @PutMapping("/{id}")
     public CustomerResponse updateCustomer(
             @PathVariable Long id,
@@ -75,9 +85,9 @@ public class CustomerController {
         return "Customer deleted successfully";
     }
 
-    // ── ADMIN: paginated ───────────────────────────────────────────────
+    // ── STAFF: paginated ───────────────────────────────────────────────
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
     @GetMapping("/page")
     public Page<CustomerResponse> getCustomers(
             @RequestParam(defaultValue = "0")          int    page,
@@ -87,9 +97,9 @@ public class CustomerController {
         return customerService.getCustomers(page, size, sortBy, direction);
     }
 
-    // ── ADMIN: by email ────────────────────────────────────────────────
+    // ── STAFF: by email ────────────────────────────────────────────────
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
     @GetMapping("/email/{email}")
     public CustomerResponse getCustomerByEmail(@PathVariable String email) {
         return customerService.getCustomerByEmail(email);

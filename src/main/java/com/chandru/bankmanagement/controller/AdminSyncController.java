@@ -11,7 +11,7 @@ import java.util.Map;
 /**
  * POST /api/admin/sync-customers
  *
- * Called by the frontend when the admin opens the Customers page.
+ * Called by the frontend when staff open the Dashboard or Customers page.
  * Pulls all CUSTOMER-role users from Keycloak and upserts them into
  * PostgreSQL — so users who registered but never logged in still appear.
  */
@@ -25,7 +25,7 @@ public class AdminSyncController {
         this.adminSyncService = adminSyncService;
     }
 
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'EMPLOYEE')")
     @PostMapping("/sync-customers")
     public Map<String, Object> syncCustomers() {
         int synced = adminSyncService.syncAllCustomers();

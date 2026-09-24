@@ -2,6 +2,9 @@ package com.chandru.bankmanagement.entity;
 
 import jakarta.persistence.*;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name = "accounts")
 public class Account {
@@ -16,27 +19,37 @@ public class Account {
     @Column(nullable = false)
     private String accountType;
 
-    @Column(nullable = false)
-    private Double balance;
+    /** Money is always BigDecimal with 2 decimal places — never floating point. */
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal balance;
 
     @ManyToOne
     @JoinColumn(name = "customer_id")
     private Customer customer;
 
+    /**
+     * Nullable so that ddl-auto=update can add the column to existing
+     * databases; a null status is treated as ACTIVE (see getter).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private AccountStatus status;
+
+    private LocalDateTime createdAt;
+
+    private LocalDateTime closedAt;
+
     public Account() {
     }
 
-    public Account(Long accountId,
-                   String accountNumber,
-                   String accountType,
-                   Double balance,
-                   Customer customer) {
+    @PrePersist
+    void onCreate() {
+        if (createdAt == null) createdAt = LocalDateTime.now();
+        if (status == null) status = AccountStatus.ACTIVE;
+    }
 
-        this.accountId = accountId;
-        this.accountNumber = accountNumber;
-        this.accountType = accountType;
-        this.balance = balance;
-        this.customer = customer;
+    public boolean isActive() {
+        return getStatus() == AccountStatus.ACTIVE;
     }
 
     public Long getAccountId() {
@@ -63,11 +76,11 @@ public class Account {
         this.accountType = accountType;
     }
 
-    public Double getBalance() {
+    public BigDecimal getBalance() {
         return balance;
     }
 
-    public void setBalance(Double balance) {
+    public void setBalance(BigDecimal balance) {
         this.balance = balance;
     }
 
@@ -77,5 +90,29 @@ public class Account {
 
     public void setCustomer(Customer customer) {
         this.customer = customer;
+    }
+
+    public AccountStatus getStatus() {
+        return status == null ? AccountStatus.ACTIVE : status;
+    }
+
+    public void setStatus(AccountStatus status) {
+        this.status = status;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getClosedAt() {
+        return closedAt;
+    }
+
+    public void setClosedAt(LocalDateTime closedAt) {
+        this.closedAt = closedAt;
     }
 }

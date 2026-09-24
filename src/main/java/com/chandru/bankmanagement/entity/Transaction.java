@@ -1,6 +1,8 @@
 package com.chandru.bankmanagement.entity;
 
 import jakarta.persistence.*;
+
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -13,7 +15,8 @@ public class Transaction {
 
     private String transactionType;
 
-    private Double amount;
+    @Column(precision = 19, scale = 2)
+    private BigDecimal amount;
 
     private LocalDateTime transactionDate;
 
@@ -21,19 +24,24 @@ public class Transaction {
     @JoinColumn(name = "account_id")
     private Account account;
 
-    public Transaction() {
-    }
+    /** Account balance immediately after this transaction (for statements). */
+    @Column(precision = 19, scale = 2)
+    private BigDecimal balanceAfter;
 
-    public Transaction(Long transactionId,
-                       String transactionType,
-                       Double amount,
-                       LocalDateTime transactionDate,
-                       Account account) {
-        this.transactionId = transactionId;
-        this.transactionType = transactionType;
-        this.amount = amount;
-        this.transactionDate = transactionDate;
-        this.account = account;
+    /** Free-text remark entered by the user, or a system description. */
+    private String description;
+
+    /** For transfers: the other side's account number. */
+    private String counterpartyAccountNumber;
+
+    /** Shared by both legs of a transfer so they can be matched. */
+    @Column(length = 40)
+    private String referenceId;
+
+    /** Keycloak username of whoever initiated the transaction (audit). */
+    private String performedBy;
+
+    public Transaction() {
     }
 
     public Long getTransactionId() {
@@ -52,11 +60,11 @@ public class Transaction {
         this.transactionType = transactionType;
     }
 
-    public Double getAmount() {
+    public BigDecimal getAmount() {
         return amount;
     }
 
-    public void setAmount(Double amount) {
+    public void setAmount(BigDecimal amount) {
         this.amount = amount;
     }
 
@@ -74,5 +82,45 @@ public class Transaction {
 
     public void setAccount(Account account) {
         this.account = account;
+    }
+
+    public BigDecimal getBalanceAfter() {
+        return balanceAfter;
+    }
+
+    public void setBalanceAfter(BigDecimal balanceAfter) {
+        this.balanceAfter = balanceAfter;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public String getCounterpartyAccountNumber() {
+        return counterpartyAccountNumber;
+    }
+
+    public void setCounterpartyAccountNumber(String counterpartyAccountNumber) {
+        this.counterpartyAccountNumber = counterpartyAccountNumber;
+    }
+
+    public String getReferenceId() {
+        return referenceId;
+    }
+
+    public void setReferenceId(String referenceId) {
+        this.referenceId = referenceId;
+    }
+
+    public String getPerformedBy() {
+        return performedBy;
+    }
+
+    public void setPerformedBy(String performedBy) {
+        this.performedBy = performedBy;
     }
 }

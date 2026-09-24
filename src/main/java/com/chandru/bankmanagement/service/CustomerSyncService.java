@@ -56,12 +56,12 @@ public class CustomerSyncService {
         return customerRepository.findByKeycloakSub(sub)
                 .map(existing -> {
                     // Keep email in sync if it changed in Keycloak
-                    if (email != null && !email.equals(existing.getEmail())
-                            && !customerRepository.existsByEmail(email)) {
+                    if (email != null && !email.equalsIgnoreCase(existing.getEmail())
+                            && !customerRepository.existsByEmailIgnoreCase(email)) {
                         existing.setEmail(email);
                         customerRepository.save(existing);
                     }
-                    return toResponse(existing);
+                    return ResponseMapper.toResponse(existing);
                 })
                 .orElseGet(() -> {
                     // ── 2. Sub not matched — check by email ──────────────
@@ -69,14 +69,14 @@ public class CustomerSyncService {
                     //    seeded/created before Keycloak was integrated, or
                     //    after a Keycloak volume wipe that issued new UUIDs.
                     if (email != null) {
-                        var byEmail = customerRepository.findByEmail(email);
+                        var byEmail = customerRepository.findByEmailIgnoreCase(email);
                         if (byEmail.isPresent()) {
                             Customer existing = byEmail.get();
                             log.info("CustomerSync: linking sub={} to existing customer id={} by email",
                                     sub, existing.getCustomerId());
                             existing.setKeycloakSub(sub);
                             customerRepository.save(existing);
-                            return toResponse(existing);
+                            return ResponseMapper.toResponse(existing);
                         }
                     }
 
@@ -90,7 +90,7 @@ public class CustomerSyncService {
                     c.setAddress("");
                     Customer saved = customerRepository.save(c);
                     log.info("CustomerSync: created customer id={} for sub={}", saved.getCustomerId(), sub);
-                    return toResponse(saved);
+                    return ResponseMapper.toResponse(saved);
                 });
     }
 
@@ -112,15 +112,5 @@ public class CustomerSyncService {
             return email.substring(0, email.indexOf('@'));
         }
         return "Customer";
-    }
-
-    private CustomerResponse toResponse(Customer c) {
-        return new CustomerResponse(
-                c.getCustomerId(),
-                c.getName(),
-                c.getEmail(),
-                c.getPhone(),
-                c.getAddress()
-        );
     }
 }

@@ -1,20 +1,26 @@
 package com.chandru.bankmanagement.service;
 
 import com.chandru.bankmanagement.dto.TransactionResponse;
+import com.chandru.bankmanagement.entity.Account;
 import com.chandru.bankmanagement.entity.Transaction;
+import com.chandru.bankmanagement.exception.AccountNotFoundException;
+import com.chandru.bankmanagement.exception.ResourceNotFoundException;
 import com.chandru.bankmanagement.exception.UnauthorizedAccessException;
 import com.chandru.bankmanagement.repository.AccountRepository;
 import com.chandru.bankmanagement.repository.TransactionRepository;
+import com.chandru.bankmanagement.security.Actor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
- * ADMIN  → any account.
+ * STAFF    → any account.
  * CUSTOMER → own accounts only (verified via keycloakSub == customer.keycloak_sub).
+ * All lists are returned newest first.
  */
 @Service
+@Transactional(readOnly = true)
 public class TransactionService {
 
     private final TransactionRepository transactionRepository;
@@ -26,61 +32,52 @@ public class TransactionService {
         this.accountRepository     = accountRepository;
     }
 
-    // ── ADMIN: all transactions ────────────────────────────────────────
+    // ── STAFF: all transactions ────────────────────────────────────────
 
     public List<TransactionResponse> getAllTransactions() {
-        return transactionRepository.findAll()
+        return transactionRepository.findAllByOrderByTransactionDateDescTransactionIdDesc()
                 .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+                .map(ResponseMapper::toResponse)
+                .toList();
     }
 
-    // ── ADMIN: by account (no ownership check) ─────────────────────────
+    // ── CUSTOMER: every transaction across my accounts ─────────────────
 
-    public List<TransactionResponse> getTransactionsByAccount(Long accountId) {
-        return transactionRepository.findByAccountAccountId(accountId)
+    public List<TransactionResponse> getMyTransactions(String keycloakSub) {
+        return transactionRepository
+                .findByAccountCustomerKeycloakSubOrderByTransactionDateDescTransactionIdDesc(keycloakSub)
                 .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+                .map(ResponseMapper::toResponse)
+                .toList();
     }
 
-    // ── ADMIN + CUSTOMER: by account with ownership enforcement ────────
+    // ── STAFF + CUSTOMER: by account with ownership enforcement ────────
 
-    /**
-     * @param keycloakSub  null → caller is ADMIN (skip ownership check)
-     *                     non-null → caller is CUSTOMER; account must belong to them
-     */
-    public List<TransactionResponse> getTransactionsByAccountForUser(
-            Long accountId, String keycloakSub) {
+    public List<TransactionResponse> getTransactionsByAccountForUser(Long accountId, Actor actor) {
+        Account account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new AccountNotFoundException("Account not found"));
 
-        if (keycloakSub != null) {
-            // Verify the account belongs to this customer
-            accountRepository
-                    .findByAccountIdAndCustomerKeycloakSub(accountId, keycloakSub)
-                    .orElseThrow(() -> new UnauthorizedAccessException(
-                            "You are not authorised to access this account"));
+        if (actor.requiresOwnership()) {
+            String ownerSub = account.getCustomer() != null
+                    ? account.getCustomer().getKeycloakSub() : null;
+            if (ownerSub == null || !ownerSub.equals(actor.sub())) {
+                throw new UnauthorizedAccessException(
+                        "You are not authorised to access this account");
+            }
         }
 
-        return getTransactionsByAccount(accountId);
+        return transactionRepository
+                .findByAccountAccountIdOrderByTransactionDateDescTransactionIdDesc(accountId)
+                .stream()
+                .map(ResponseMapper::toResponse)
+                .toList();
     }
 
-    // ── ADMIN: single transaction by id ───────────────────────────────
+    // ── STAFF: single transaction by id ────────────────────────────────
 
     public TransactionResponse getTransactionById(Long id) {
         Transaction tx = transactionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Transaction not found"));
-        return toResponse(tx);
-    }
-
-    // ── mapping ────────────────────────────────────────────────────────
-
-    private TransactionResponse toResponse(Transaction tx) {
-        return new TransactionResponse(
-                tx.getTransactionId(),
-                tx.getTransactionType(),
-                tx.getAmount(),
-                tx.getTransactionDate(),
-                tx.getAccount().getAccountNumber()
-        );
+                .orElseThrow(() -> new ResourceNotFoundException("Transaction not found"));
+        return ResponseMapper.toResponse(tx);
     }
 }

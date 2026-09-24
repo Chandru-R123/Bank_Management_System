@@ -7,6 +7,8 @@ public class CustomerResponse {
     private String email;
     private String phone;
     private String address;
+    /** True when the customer has a linked Keycloak login (can use online banking). */
+    private boolean onlineBanking;
 
     public CustomerResponse() {
     }
@@ -57,5 +59,13 @@ public class CustomerResponse {
 
     public void setAddress(String address) {
         this.address = address;
+    }
+
+    public boolean isOnlineBanking() {
+        return onlineBanking;
+    }
+
+    public void setOnlineBanking(boolean onlineBanking) {
+        this.onlineBanking = onlineBanking;
     }
 }

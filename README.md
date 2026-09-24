@@ -173,6 +173,38 @@ Role-based access enforced by @PreAuthorize
 
 ---
 
+## Roles
+
+| Role | Can do |
+|------|--------|
+| `ADMIN` | Everything, including freeze / unfreeze / close accounts, edit accounts and delete customers |
+| `EMPLOYEE` | View all customers, accounts and transactions; create/edit customers; open accounts; deposit, withdraw and transfer for any account |
+| `CUSTOMER` | Own accounts only: deposit, withdraw, transfer (to any account by number), statements, update own phone/address |
+
+Staff users inherit `CUSTOMER` through Keycloak's default roles, but they are never synced as customers.
+
+---
+
+## Business Rules
+
+| Rule | Detail |
+|------|--------|
+| Money precision | All amounts are `BigDecimal` with at most 2 decimal places |
+| Concurrency | Every balance change locks the account row (`SELECT … FOR UPDATE`); transfers lock both rows in id order, so they can't deadlock |
+| Audit trail | Every balance change writes a transaction with the balance after it, a reference ID, remarks and the Keycloak username of whoever did it |
+| No silent edits | `PUT /api/accounts/{id}` can't change the balance or the account number |
+| Account status | `ACTIVE` → `FROZEN` (no debits or credits) → `CLOSED` (the remaining balance is paid out as `CLOSURE_PAYOUT`; history is kept) |
+| Savings minimum | Savings accounts must keep ₹1,000 (`bank.savings.minimum-balance`), including at opening |
+| Fixed Deposit | Funded once at opening. No top-ups, withdrawals or outgoing transfers; the money is released when the deposit is closed |
+| Customer limits | ₹10,00,000 per transaction (`bank.customer.max-transaction-amount`) and ₹2,00,000 of withdrawals + outgoing transfers per account per day (`bank.customer.daily-debit-limit`) |
+| Opening deposit | Recorded as an `OPENING_DEPOSIT` transaction; the account number is generated automatically if left blank |
+| Customer deletion | Only customers who never had an account can be deleted |
+| Beneficiary check | `GET /api/accounts/lookup?number=` returns a masked holder name (e.g. "Priya V.") before a transfer |
+
+All limits can be changed with environment variables. See `application.properties`.
+
+---
+
 ## API Endpoints
 
 All endpoints accessible through NGINX at `http://localhost:8080/api/...`
@@ -182,38 +214,43 @@ All endpoints accessible through NGINX at `http://localhost:8080/api/...`
 POST /auth/realms/bank-management/protocol/openid-connect/token
 ```
 
-### Customers (ADMIN only)
+### Customers
 ```
-GET    /api/customers
-GET    /api/customers/{id}
-POST   /api/customers
-PUT    /api/customers/{id}
-DELETE /api/customers/{id}
-```
-
-### Customer Profile (CUSTOMER only)
-```
-GET    /api/customers/me
+GET    /api/customers                 (STAFF)
+GET    /api/customers/{id}            (STAFF)
+POST   /api/customers                 (STAFF)
+PUT    /api/customers/{id}            (STAFF)
+DELETE /api/customers/{id}            (ADMIN — only if the customer never had an account)
+GET    /api/customers/me              (CUSTOMER)
+PUT    /api/customers/me              (CUSTOMER — phone & address only)
+POST   /api/admin/sync-customers      (STAFF — pull Keycloak self-registrations)
 ```
 
 ### Accounts
 ```
-GET    /api/accounts          (ADMIN)
-GET    /api/accounts/my       (CUSTOMER — own accounts only)
-POST   /api/accounts          (ADMIN)
-PUT    /api/accounts/{id}     (ADMIN)
-DELETE /api/accounts/{id}     (ADMIN)
-POST   /api/accounts/{id}/deposit   (ADMIN + CUSTOMER — owns account)
-POST   /api/accounts/{id}/withdraw  (ADMIN + CUSTOMER — owns account)
-POST   /api/accounts/transfer       (ADMIN + CUSTOMER — owns source account)
+GET    /api/accounts                  (STAFF)
+GET    /api/accounts/my               (CUSTOMER — own accounts only)
+GET    /api/accounts/lookup?number=   (ANY — beneficiary verification)
+POST   /api/accounts                  (STAFF — open account)
+PUT    /api/accounts/{id}             (ADMIN — type / owner only)
+POST   /api/accounts/{id}/freeze      (ADMIN)
+POST   /api/accounts/{id}/unfreeze    (ADMIN)
+POST   /api/accounts/{id}/close       (ADMIN — pays out remaining balance)
+DELETE /api/accounts/{id}             (ADMIN — same as close; accounts are never hard-deleted)
+POST   /api/accounts/{id}/deposit     { amount, description? }
+POST   /api/accounts/{id}/withdraw    { amount, description? }
+POST   /api/accounts/transfer         { fromAccountId, toAccountId | toAccountNumber, amount, description? }
 ```
 
 ### Transactions
 ```
-GET    /api/transactions              (ADMIN)
-GET    /api/accounts/{id}/transactions  (ADMIN + CUSTOMER — owns account)
-GET    /api/transactions/{id}           (ADMIN)
+GET    /api/transactions                (STAFF — newest first)
+GET    /api/transactions/my             (CUSTOMER — all own accounts)
+GET    /api/transactions/{id}           (STAFF)
+GET    /api/accounts/{id}/transactions  (STAFF, or CUSTOMER who owns the account)
 ```
+
+Errors always return `{ "status": …, "message": "…" }`. Business-rule violations such as insufficient balance return **400**, not 500.
 
 ---
 

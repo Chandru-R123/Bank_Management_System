@@ -1,12 +1,15 @@
 package com.chandru.bankmanagement.config;
 
 import com.chandru.bankmanagement.entity.Account;
+import com.chandru.bankmanagement.entity.AccountStatus;
 import com.chandru.bankmanagement.entity.Customer;
 import com.chandru.bankmanagement.repository.AccountRepository;
 import com.chandru.bankmanagement.repository.CustomerRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.math.BigDecimal;
 
 /**
  * Seeds three demo customers on first startup.
@@ -53,7 +56,8 @@ public class DataInitializer {
             Account a1 = new Account();
             a1.setAccountNumber("SB-1001-2024");
             a1.setAccountType("SAVINGS");
-            a1.setBalance(50000.00);
+            a1.setBalance(new BigDecimal("50000.00"));
+            a1.setStatus(AccountStatus.ACTIVE);
             a1.setCustomer(c1);
             accountRepo.save(a1);
 
@@ -69,7 +73,8 @@ public class DataInitializer {
             Account a2 = new Account();
             a2.setAccountNumber("SB-1002-2024");
             a2.setAccountType("CURRENT");
-            a2.setBalance(125000.00);
+            a2.setBalance(new BigDecimal("125000.00"));
+            a2.setStatus(AccountStatus.ACTIVE);
             a2.setCustomer(c2);
             accountRepo.save(a2);
 
@@ -85,7 +90,8 @@ public class DataInitializer {
             Account a3 = new Account();
             a3.setAccountNumber("FD-1003-2024");
             a3.setAccountType("FIXED_DEPOSIT");
-            a3.setBalance(200000.00);
+            a3.setBalance(new BigDecimal("200000.00"));
+            a3.setStatus(AccountStatus.ACTIVE);
             a3.setCustomer(c3);
             accountRepo.save(a3);
 
