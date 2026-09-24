@@ -52,6 +52,9 @@ services:
   mailhog:
     image: mailhog/mailhog:v1.0.1
     container_name: bank-mailhog
+    environment:
+      # Serve the UI and API under /mail so it works behind the NGINX gateway
+      MH_UI_WEB_PATH: mail
     networks:
       - bank-network
     restart: unless-stopped
