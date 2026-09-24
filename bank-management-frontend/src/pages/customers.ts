@@ -16,6 +16,16 @@ export async function renderCustomers(container: HTMLElement) {
   `;
 
   document.getElementById('add-customer-btn')!.addEventListener('click', () => openForm(null, loadData));
+
+  // Sync all Keycloak-registered users into PostgreSQL before loading the list.
+  // This ensures users who registered via Keycloak's registration page appear
+  // in the admin list immediately — even before their first login to the app.
+  try {
+    await customers.adminSync();
+  } catch (_) {
+    // Non-fatal — if sync fails we still show whatever is already in DB
+  }
+
   await loadData();
 
   async function loadData() {

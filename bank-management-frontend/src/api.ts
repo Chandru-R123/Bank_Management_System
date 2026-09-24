@@ -92,14 +92,16 @@ export interface CustomerRequest {
 }
 
 export const customers = {
-  getAll:   ()                              => request<Customer[]>('GET',    '/customers'),
-  getMe:    ()                              => request<Customer>  ('GET',    '/customers/me'),
-  getById:  (id: number)                   => request<Customer>  ('GET',    `/customers/${id}`),
-  create:   (data: CustomerRequest)        => request<Customer>  ('POST',   '/customers', data),
-  update:   (id: number, d: CustomerRequest) => request<Customer>('PUT',    `/customers/${id}`, d),
-  delete:   (id: number)                   => request<string>    ('DELETE', `/customers/${id}`),
-  /** Called after CUSTOMER login to auto-create the PostgreSQL customer row */
-  sync:     ()                             => request<Customer>  ('POST',   '/auth/sync'),
+  getAll:    ()                               => request<Customer[]>('GET',    '/customers'),
+  getMe:     ()                               => request<Customer>  ('GET',    '/customers/me'),
+  getById:   (id: number)                     => request<Customer>  ('GET',    `/customers/${id}`),
+  create:    (data: CustomerRequest)          => request<Customer>  ('POST',   '/customers', data),
+  update:    (id: number, d: CustomerRequest) => request<Customer>  ('PUT',    `/customers/${id}`, d),
+  delete:    (id: number)                     => request<string>    ('DELETE', `/customers/${id}`),
+  /** Called after CUSTOMER login to link this KC user to a PostgreSQL row */
+  sync:      ()                               => request<Customer>  ('POST',   '/auth/sync'),
+  /** Called when ADMIN opens Customers page — pulls all KC registrations into DB */
+  adminSync: ()                               => request<{synced: number}>('POST', '/admin/sync-customers'),
 };
 
 // ── Accounts ──────────────────────────────────────────────────────────────────

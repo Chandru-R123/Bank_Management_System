@@ -74,6 +74,9 @@ export async function renderDashboard(container: HTMLElement) {
     </div>
   `;
 
+  // Sync Keycloak registrations into DB before loading stats
+  customers.adminSync().catch(() => null);
+
   const [custResult, acctResult, txResult] = await Promise.allSettled([
     customers.getAll(),
     accounts.getAll(),
