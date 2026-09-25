@@ -132,6 +132,47 @@ Existing users who are missing phone/address are asked for them at their next lo
 
 ---
 
+## Creating Logins from the Admin Dashboard
+
+### Staff (Employee / Maker / Checker / Admin)
+Only ADMIN users see the **Staff** page in the sidebar. There you can:
+- **Add staff member**: name, username, work email, phone and roles. For the password, choose either
+  - **Email a set-password link** (default): they get an email valid for 24 hours and choose their own password, or
+  - **Set a temporary password**: share it with them; they must change it at first sign-in.
+- Change roles, email a password reset link, set a temporary password, and disable or enable a login.
+- You cannot remove your own ADMIN role or disable yourself.
+
+Staff logins live only in Keycloak. The backend creates them through the Keycloak Admin API.
+
+### Branch customers
+Creating a customer on the admin page has **no password field, by design**. Leave
+**"Create an online banking login"** ticked and the backend:
+1. creates the customer's Keycloak login (username = email, role CUSTOMER)
+2. links it to the customer record
+3. emails them a **set-your-password** link
+
+For customers created earlier, open the customer and click **Enable online banking**.
+For customers who already have online banking, use **Send password reset email**.
+
+After that, **Forgot Password?** on the login page works for them too. Before this, it silently did nothing, because a
+branch customer had no Keycloak login to send the email to.
+
+Emails go through Keycloak's SMTP settings. Locally they land in MailHog: **http://localhost:8080/mail/**
+
+API:
+```
+GET  /api/admin/staff                              (ADMIN)
+POST /api/admin/staff                              (ADMIN)  { username, firstName, lastName, email, phone, address?, roles[], password? }
+PUT  /api/admin/staff/{id}/roles                   (ADMIN)  { roles[] }
+POST /api/admin/staff/{id}/enable | /disable       (ADMIN)
+POST /api/admin/staff/{id}/password-email          (ADMIN)
+PUT  /api/admin/staff/{id}/password                (ADMIN)  { password }   temporary
+POST /api/customers/{id}/online-banking            (ADMIN, EMPLOYEE)
+POST /api/customers/{id}/online-banking/password-email (ADMIN, EMPLOYEE)
+```
+
+---
+
 ## Request Flow
 
 ```

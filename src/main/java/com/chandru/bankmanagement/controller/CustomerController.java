@@ -1,10 +1,13 @@
 package com.chandru.bankmanagement.controller;
 
+import com.chandru.bankmanagement.dto.ActionResponse;
 import com.chandru.bankmanagement.dto.CustomerRequest;
 import com.chandru.bankmanagement.dto.CustomerResponse;
 import com.chandru.bankmanagement.dto.ProfileUpdateRequest;
 import com.chandru.bankmanagement.security.Roles;
+import com.chandru.bankmanagement.security.SecurityUtils;
 import com.chandru.bankmanagement.service.CustomerService;
+import com.chandru.bankmanagement.service.OnlineBankingService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
@@ -19,10 +22,30 @@ import java.util.List;
 @RequestMapping("/api/customers")
 public class CustomerController {
 
-    private final CustomerService customerService;
+    private final CustomerService      customerService;
+    private final OnlineBankingService onlineBankingService;
 
-    public CustomerController(CustomerService customerService) {
-        this.customerService = customerService;
+    public CustomerController(CustomerService customerService,
+                              OnlineBankingService onlineBankingService) {
+        this.customerService      = customerService;
+        this.onlineBankingService = onlineBankingService;
+    }
+
+    // ── STAFF: online-banking login for a branch customer ──────────────
+
+    /** Creates the Keycloak login (username = email) and emails a "set password" link. */
+    @PreAuthorize(Roles.CUSTOMER_MANAGERS)
+    @PostMapping("/{id}/online-banking")
+    public ActionResponse<CustomerResponse> enableOnlineBanking(@PathVariable Long id,
+                                                                @AuthenticationPrincipal Jwt jwt) {
+        return onlineBankingService.enable(id, SecurityUtils.actor(jwt));
+    }
+
+    /** Emails a "reset your password" link to a customer who already has online banking. */
+    @PreAuthorize(Roles.CUSTOMER_MANAGERS)
+    @PostMapping("/{id}/online-banking/password-email")
+    public ActionResponse<CustomerResponse> sendPasswordEmail(@PathVariable Long id) {
+        return onlineBankingService.sendPasswordEmail(id);
     }
 
     // ── STAFF: create ──────────────────────────────────────────────────

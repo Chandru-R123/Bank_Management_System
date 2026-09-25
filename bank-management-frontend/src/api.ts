@@ -165,6 +165,13 @@ export interface CustomerRequest {
   phone: string;
   address: string;
 }
+/** Result of an action that may also send an email. */
+export interface ActionResult<T> {
+  data: T;
+  emailSent: boolean;
+  message: string;
+}
+
 export interface ProfileUpdate {
   phone: string;
   address: string;
@@ -182,7 +189,53 @@ export const customers = {
   sync:      ()                               => request<Customer>  ('POST',   '/auth/sync'),
   /** Called when staff open Customers/Dashboard — pulls all KC registrations into DB */
   adminSync: ()                               => request<{ synced: number }>('POST', '/admin/sync-customers'),
+  /** Create the Keycloak login for a branch customer and email a "set password" link */
+  enableOnlineBanking: (id: number)           => request<ActionResult<Customer>>('POST', `/customers/${id}/online-banking`),
+  /** Email a "reset your password" link to a customer with online banking */
+  sendPasswordEmail:   (id: number)           => request<ActionResult<Customer>>('POST', `/customers/${id}/online-banking/password-email`),
 };
+
+// ── Staff (ADMIN) ─────────────────────────────────────────────────────────────
+
+export type StaffRole = 'ADMIN' | 'EMPLOYEE' | 'MAKER' | 'CHECKER';
+
+export interface StaffMember {
+  id: string;
+  username: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  phone: string | null;
+  enabled: boolean;
+  roles: StaffRole[];
+  createdTimestamp: number | null;
+}
+export interface StaffRequest {
+  username: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  address?: string;
+  roles: StaffRole[];
+  /** Temporary password; omit to email a "set password" link instead. */
+  password?: string;
+}
+
+export const staff = {
+  getAll:        ()                                => request<StaffMember[]>('GET', '/admin/staff'),
+  create:        (data: StaffRequest)              => request<ActionResult<StaffMember>>('POST', '/admin/staff', data),
+  updateRoles:   (id: string, roles: StaffRole[])  => request<StaffMember>('PUT', `/admin/staff/${id}/roles`, { roles }),
+  enable:        (id: string)                      => request<StaffMember>('POST', `/admin/staff/${id}/enable`),
+  disable:       (id: string)                      => request<StaffMember>('POST', `/admin/staff/${id}/disable`),
+  passwordEmail: (id: string)                      => request<ActionResult<StaffMember>>('POST', `/admin/staff/${id}/password-email`),
+  setPassword:   (id: string, password: string)    => request<ActionResult<StaffMember>>('PUT', `/admin/staff/${id}/password`, { password }),
+};
+
+/** Keycloak user id of the signed-in user ("sub" claim). */
+export function getUserId(): string {
+  return (keycloak.tokenParsed?.sub as string | undefined) ?? '';
+}
 
 // ── Accounts ──────────────────────────────────────────────────────────────────
 

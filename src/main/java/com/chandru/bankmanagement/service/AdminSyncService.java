@@ -5,11 +5,7 @@ import com.chandru.bankmanagement.repository.CustomerRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
-import org.springframework.web.client.RestTemplate;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -46,33 +42,25 @@ public class AdminSyncService {
     private static final Logger log =
             LoggerFactory.getLogger(AdminSyncService.class);
 
-    private static final int PAGE_SIZE = 200;
-
     private final CustomerRepository customerRepository;
-    private final RestTemplate        restTemplate;
-
-    @Value("${keycloak.admin.server-url:http://keycloak:8180}")
-    private String keycloakServerUrl;
+    private final KeycloakAdminClient keycloak;
 
     @Value("${keycloak.admin.realm:bank-management}")
     private String realm;
 
-    @Value("${keycloak.admin.username:admin}")
-    private String adminUsername;
-
-    @Value("${keycloak.admin.password:admin}")
-    private String adminPassword;
-
-    public AdminSyncService(CustomerRepository customerRepository) {
+    public AdminSyncService(CustomerRepository customerRepository,
+                            KeycloakAdminClient keycloak) {
         this.customerRepository = customerRepository;
-        this.restTemplate        = new RestTemplate();
+        this.keycloak           = keycloak;
     }
 
     public int syncAllCustomers() {
 
-        String token = getMasterAdminToken();
-        if (token == null) {
-            log.error("AdminSync: cannot get Keycloak admin token");
+        String token;
+        try {
+            token = keycloak.adminToken();
+        } catch (RuntimeException e) {
+            log.error("AdminSync: cannot get Keycloak admin token: {}", e.getMessage());
             return 0;
         }
 
@@ -138,88 +126,30 @@ public class AdminSyncService {
         return synced;
     }
 
-    // ── Keycloak Admin API calls ───────────────────────────────────────────
-
-    @SuppressWarnings("rawtypes")
-    private String getMasterAdminToken() {
-        try {
-            String url = keycloakServerUrl
-                    + "/realms/master/protocol/openid-connect/token";
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-
-            // Form-encoded properly so passwords with &, = or % still work
-            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
-            form.add("grant_type", "password");
-            form.add("client_id", "admin-cli");
-            form.add("username", adminUsername);
-            form.add("password", adminPassword);
-
-            ResponseEntity<Map> resp = restTemplate.exchange(
-                    url, HttpMethod.POST,
-                    new HttpEntity<>(form, headers), Map.class);
-
-            return resp.getBody() != null ? (String) resp.getBody().get("access_token") : null;
-        } catch (Exception e) {
-            log.error("AdminSync: failed to get admin token: {}", e.getMessage());
-            return null;
-        }
-    }
+    // ── Keycloak ───────────────────────────────────────────────────────────
 
     private List<Map<String, Object>> getCustomerUsers(String token) {
         Map<String, Map<String, Object>> byId = new LinkedHashMap<>();
-        for (Map<String, Object> u : getRoleUsers(token, "CUSTOMER")) {
+        for (Map<String, Object> u : keycloak.roleUsersOrEmpty(token, "CUSTOMER")) {
             byId.put(str(u.get("id")), u);
         }
-        for (Map<String, Object> u : getRoleUsers(token, "default-roles-" + realm)) {
+        for (Map<String, Object> u : keycloak.roleUsersOrEmpty(token, "default-roles-" + realm)) {
             byId.putIfAbsent(str(u.get("id")), u);
         }
 
         Set<String> staffIds = new HashSet<>();
         for (String staffRole : List.of("ADMIN", "EMPLOYEE", "MAKER", "CHECKER")) {
-            for (Map<String, Object> u : getRoleUsers(token, staffRole)) {
+            for (Map<String, Object> u : keycloak.roleUsersOrEmpty(token, staffRole)) {
                 staffIds.add(str(u.get("id")));
             }
         }
         // Third-party provider apps are not bank customers either
-        for (Map<String, Object> u : getRoleUsers(token, "TPP")) {
+        for (Map<String, Object> u : keycloak.roleUsersOrEmpty(token, "TPP")) {
             staffIds.add(str(u.get("id")));
         }
         staffIds.forEach(byId::remove);
         byId.remove(null);
         return new ArrayList<>(byId.values());
-    }
-
-    /**
-     * GET /admin/realms/{realm}/roles/{role}/users — one request per page
-     * instead of one role-mapping request per user.
-     */
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private List<Map<String, Object>> getRoleUsers(String token, String role) {
-        List<Map<String, Object>> all = new ArrayList<>();
-        HttpHeaders headers = new HttpHeaders();
-        headers.setBearerAuth(token);
-
-        try {
-            for (int first = 0; ; first += PAGE_SIZE) {
-                String url = keycloakServerUrl + "/admin/realms/" + realm
-                        + "/roles/" + role + "/users?briefRepresentation=false"
-                        + "&first=" + first + "&max=" + PAGE_SIZE;
-
-                ResponseEntity<List> resp = restTemplate.exchange(
-                        url, HttpMethod.GET,
-                        new HttpEntity<>(headers), List.class);
-
-                List<Map<String, Object>> page = resp.getBody();
-                if (page == null || page.isEmpty()) break;
-                all.addAll(page);
-                if (page.size() < PAGE_SIZE) break;
-            }
-        } catch (Exception e) {
-            log.warn("AdminSync: failed to fetch users for role {}: {}", role, e.getMessage());
-        }
-        return all;
     }
 
     private String buildName(String firstName, String lastName,

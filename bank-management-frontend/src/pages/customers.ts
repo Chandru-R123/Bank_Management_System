@@ -233,6 +233,20 @@ function openCustomerDrawer(c: Customer, acctList: Account[], onChange: () => vo
         </dl>
       </div></div>
 
+      ${canManageCustomers() ? `
+      <div class="card mt-4"><div class="card-body flex items-center gap-3">
+        <span class="kpi-icon ${c.onlineBanking ? 'tone-green' : 'tone-slate'}">${icon('key', 18)}</span>
+        <div class="grow" style="flex:1">
+          <div class="fw-600">${c.onlineBanking ? 'Online banking is active' : 'No online banking login'}</div>
+          <div class="text-sm text-muted">${c.onlineBanking
+            ? `Signs in with ${esc(c.email)}. Send a reset link if they forgot the password.`
+            : 'Create a login so the customer can use online banking and reset their password.'}</div>
+        </div>
+        ${c.onlineBanking
+          ? `<button class="btn btn-secondary btn-sm" data-reset-pw>${icon('mail', 14)} Send password reset email</button>`
+          : `<button class="btn btn-primary btn-sm" data-enable-online>${icon('key', 14)} Enable online banking</button>`}
+      </div></div>` : ''}
+
       <div class="section-head section">
         <div class="section-title">Accounts <span class="text-muted" style="font-weight:400">· ${own.length}</span></div>
         ${isAdmin() ? `<button class="btn btn-secondary btn-sm" data-open-account>${icon('plus', 14)} Open account</button>` : ''}
@@ -259,6 +273,26 @@ function openCustomerDrawer(c: Customer, acctList: Account[], onChange: () => vo
     m.close();
     openCustomerForm(c, onChange);
   });
+  const enableBtn = m.el.querySelector<HTMLButtonElement>('[data-enable-online]');
+  enableBtn?.addEventListener('click', () => withBusy(enableBtn, async () => {
+    try {
+      const r = await customers.enableOnlineBanking(c.customerId);
+      toast(r.message, r.emailSent ? 'success' : 'info');
+      m.close();
+      onChange();
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
+  }));
+  const resetBtn = m.el.querySelector<HTMLButtonElement>('[data-reset-pw]');
+  resetBtn?.addEventListener('click', () => withBusy(resetBtn, async () => {
+    try {
+      const r = await customers.sendPasswordEmail(c.customerId);
+      toast(r.message, 'success');
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
+  }));
   m.el.querySelector('[data-open-account]')?.addEventListener('click', () => {
     m.close();
     openAccountForm(null, onChange, c.customerId);
@@ -301,6 +335,13 @@ export function openCustomerForm(existing: Customer | null, onSave: () => void) 
           <textarea id="cf-address" class="textarea" maxlength="255" rows="2">${esc(existing?.address ?? '')}</textarea>
           <div class="field-error" data-error></div>
         </div>
+        ${!isEdit ? `
+        <label class="callout callout-info" style="cursor:pointer">
+          <input type="checkbox" id="cf-online" checked style="width:18px;height:18px;margin-top:1px" />
+          <div><strong>Create an online banking login</strong><br/>
+            No password is set here. The customer gets an email with a link to choose their own password
+            (username = their email). Without a login, "Forgot password" cannot work for them.</div>
+        </label>` : ''}
         ${isEdit && existing.onlineBanking ? `<div class="callout callout-info">${icon('info', 16)}<div>This customer signs in with online banking. Changing the email here does not change their login email.</div></div>` : ''}
       </form>`,
     footer: `
@@ -341,7 +382,19 @@ export function openCustomerForm(existing: Customer | null, onSave: () => void) 
         toast('Customer details updated', 'success');
       } else {
         const created = await customers.create(data);
-        toast(`${created.name} added as customer #${created.customerId}`, 'success');
+        const wantsLogin = root.querySelector<HTMLInputElement>('#cf-online')?.checked;
+        if (wantsLogin) {
+          try {
+            const r = await customers.enableOnlineBanking(created.customerId);
+            toast(`${created.name} added as customer #${created.customerId}. ${r.message}`, r.emailSent ? 'success' : 'info');
+          } catch (err) {
+            // The customer record exists — only the login step failed; it can be retried from the drawer
+            toast(`${created.name} was added, but the online banking login failed: ${errorMessage(err)}. `
+              + 'Open the customer and click "Enable online banking" to retry.', 'error');
+          }
+        } else {
+          toast(`${created.name} added as customer #${created.customerId}`, 'success');
+        }
       }
       m.close();
       onSave();

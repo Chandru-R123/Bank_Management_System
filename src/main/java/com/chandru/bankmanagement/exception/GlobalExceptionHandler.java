@@ -63,6 +63,14 @@ public class GlobalExceptionHandler {
                 "The account is busy with another transaction. Please try again.");
     }
 
+    // ── 502 — Keycloak / email service problems ───────────────────────
+
+    @ExceptionHandler(ExternalServiceException.class)
+    public ResponseEntity<Map<String, Object>> handleExternal(ExternalServiceException ex) {
+        log.warn("External service error: {}", ex.getMessage());
+        return errorResponse(HttpStatus.BAD_GATEWAY, ex.getMessage());
+    }
+
     // ── 400 ────────────────────────────────────────────────────────────
 
     @ExceptionHandler({BusinessRuleException.class, IllegalArgumentException.class})

@@ -1,6 +1,6 @@
 import './style.css';
 import keycloak from './keycloak';
-import { customers, getDisplayName, getRoleLabel, hasRole, isStaff, isTpp } from './api';
+import { customers, getDisplayName, getRoleLabel, hasRole, isAdmin, isStaff, isTpp } from './api';
 import { icon } from './icons';
 import type { IconName } from './icons';
 import { esc, initials, toast, todayLong, errorMessage } from './utils';
@@ -14,6 +14,7 @@ import { renderProfile }        from './pages/profile';
 import { renderBeneficiaries }  from './pages/beneficiaries';
 import { renderConsents }       from './pages/consents';
 import { renderTppPortal }      from './pages/tpp';
+import { renderStaff }          from './pages/staff';
 
 const app = document.getElementById('app')!;
 
@@ -33,6 +34,8 @@ interface Route {
   crumb: string;
   icon: IconName;
   render: (el: HTMLElement) => Promise<void>;
+  /** Only shown to (and routable by) ADMIN users. */
+  adminOnly?: boolean;
 }
 
 const staffRoutes: Record<string, Route> = {
@@ -42,6 +45,7 @@ const staffRoutes: Record<string, Route> = {
   transactions: { title: 'Transactions', crumb: 'Ledger of every movement',         icon: 'receipt',   render: renderTransactions },
   beneficiaries:{ title: 'Beneficiaries', crumb: 'Saved payees of every customer',  icon: 'userPlus',  render: renderBeneficiaries },
   consents:     { title: 'Consents',     crumb: 'Open Banking access requests',     icon: 'shield',    render: renderConsents },
+  staff:        { title: 'Staff',        crumb: 'Employee, maker & checker logins',  icon: 'key',       render: renderStaff, adminOnly: true },
 };
 
 const customerRoutes: Record<string, Route> = {
@@ -57,7 +61,11 @@ const tppRoutes: Record<string, Route> = {
 };
 
 function routes(): Record<string, Route> {
-  if (isStaff()) return staffRoutes;
+  if (isStaff()) {
+    return Object.fromEntries(
+      Object.entries(staffRoutes).filter(([, r]) => !r.adminOnly || isAdmin()),
+    );
+  }
   if (isTpp()) return tppRoutes;
   return customerRoutes;
 }

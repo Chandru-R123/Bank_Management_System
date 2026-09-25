@@ -42,9 +42,14 @@ final class ResponseMapper {
                 c.getPhone(),
                 c.getAddress()
         );
-        String sub = c.getKeycloakSub();
-        r.setOnlineBanking(sub != null && !sub.isBlank() && !sub.endsWith("-placeholder"));
+        r.setOnlineBanking(hasOnlineLogin(c));
         return r;
+    }
+
+    /** True when the customer is linked to a real Keycloak login (not a seed placeholder). */
+    static boolean hasOnlineLogin(Customer c) {
+        String sub = c.getKeycloakSub();
+        return sub != null && !sub.isBlank() && !sub.endsWith("-placeholder");
     }
 
     static TransactionResponse toResponse(Transaction tx) {
