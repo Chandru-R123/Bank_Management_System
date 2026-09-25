@@ -132,6 +132,27 @@ Existing users who are missing phone/address are asked for them at their next lo
 
 ---
 
+## Sample Data
+
+On first start the backend seeds demo data (`SampleDataInitializer`). It runs only once and never blocks startup. Turn it off with `SEED_SAMPLE_DATA=false`.
+
+| Customer | Login / password | Accounts | Highlights |
+|----------|------------------|----------|-----------|
+| Meera Nair | `meera` / `Customer@1234` | SB-2001-2025 | Salary, rent, transfers; 2 beneficiaries; 1 **authorised** + 1 **pending** consent |
+| Karthik Subramanian | `karthik` / `Customer@1234` | SB-2002-2025, CA-2003-2025, SB-2004-2025 (**closed**) | Business current account; consent sharing 2 accounts |
+| Divya Krishnan | `divya` / `Customer@1234` | SB-2005-2025, FD-2006-2025 (Fixed Deposit) | **Rejected** consent |
+| Vikram Reddy | `vikram` / `Customer@1234` | CA-2007-2025 | **Revoked** consent |
+| Fatima Sheikh | `fatima` / `Customer@1234` | SB-2008-2025 (**frozen**) | **Expired** consent |
+
+It also adds:
+- about 40 transactions spread over the last 30 days: opening deposits, deposits, withdrawals, transfers (both legs, with a shared reference) and one closure payout. Running balances are correct, which fills the dashboard cash-flow chart
+- 8 beneficiaries, including 2 for `rahul`
+- 7 consents from TPP apps (BudgetBuddy, LoanWise Credit, SaveSmart, TaxEase), all visible to the `fintech-app` login, plus a pending request for `rahul`
+
+To see the sample data on an existing database, it seeds automatically as long as `meera.nair@example.com` doesn't exist yet. The sample **logins** need a fresh Keycloak realm import (see *Already have a Keycloak volume?*).
+
+---
+
 ## Creating Logins from the Admin Dashboard
 
 ### Staff (Employee / Maker / Checker / Admin)

@@ -8,6 +8,7 @@ import com.chandru.bankmanagement.repository.CustomerRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 
 import java.math.BigDecimal;
 
@@ -31,6 +32,7 @@ public class DataInitializer {
     private static final String SUB_ARJUN = "keycloak-sub-arjun-placeholder";
 
     @Bean
+    @Order(1)   // before SampleDataInitializer, which references these customers
     public CommandLineRunner seedData(
             CustomerRepository customerRepo,
             AccountRepository  accountRepo) {

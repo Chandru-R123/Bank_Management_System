@@ -367,6 +367,136 @@
       "realmRoles": [
         "CUSTOMER"
       ]
+    },
+    {
+      "username": "meera",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Meera",
+      "lastName": "Nair",
+      "email": "meera.nair@example.com",
+      "attributes": {
+        "phone": [
+          "9840012345"
+        ],
+        "address": [
+          "22 Besant Nagar, Chennai, Tamil Nadu"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Customer@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER"
+      ]
+    },
+    {
+      "username": "karthik",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Karthik",
+      "lastName": "Subramanian",
+      "email": "karthik.s@example.com",
+      "attributes": {
+        "phone": [
+          "9894056789"
+        ],
+        "address": [
+          "14 Race Course Road, Coimbatore, Tamil Nadu"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Customer@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER"
+      ]
+    },
+    {
+      "username": "divya",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Divya",
+      "lastName": "Krishnan",
+      "email": "divya.krishnan@example.com",
+      "attributes": {
+        "phone": [
+          "9786543210"
+        ],
+        "address": [
+          "9 KK Nagar, Madurai, Tamil Nadu"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Customer@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER"
+      ]
+    },
+    {
+      "username": "vikram",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Vikram",
+      "lastName": "Reddy",
+      "email": "vikram.reddy@example.com",
+      "attributes": {
+        "phone": [
+          "9900112233"
+        ],
+        "address": [
+          "301 Jubilee Hills, Hyderabad, Telangana"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Customer@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER"
+      ]
+    },
+    {
+      "username": "fatima",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Fatima",
+      "lastName": "Sheikh",
+      "email": "fatima.sheikh@example.com",
+      "attributes": {
+        "phone": [
+          "9123012345"
+        ],
+        "address": [
+          "45 Fraser Town, Bengaluru, Karnataka"
+        ]
+      },
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Customer@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "CUSTOMER"
+      ]
     }
   ]
 }
