@@ -1,0 +1,22 @@
+/* Force reCAPTCHA to render as full-size normal widget (not compact) */
+.g-recaptcha {
+    transform: scale(1) !important;
+    -webkit-transform: scale(1) !important;
+    transform-origin: 0 0 !important;
+    -webkit-transform-origin: 0 0 !important;
+    width: 304px !important;
+    height: 78px !important;
+    overflow: hidden !important;
+}
+
+/* Ensure the iframe inside shows fully */
+.g-recaptcha iframe {
+    width: 304px !important;
+    height: 78px !important;
+}
+
+/* Add spacing around the widget */
+.g-recaptcha {
+    margin: 12px 0 8px 0;
+    display: block;
+}

@@ -5,11 +5,7 @@ import com.chandru.bankmanagement.dto.AccountRequest;
 import com.chandru.bankmanagement.dto.AccountResponse;
 import com.chandru.bankmanagement.dto.TransactionResponse;
 import com.chandru.bankmanagement.dto.TransferRequest;
-import com.chandru.bankmanagement.entity.Account;
-import com.chandru.bankmanagement.entity.AccountStatus;
-import com.chandru.bankmanagement.entity.Customer;
-import com.chandru.bankmanagement.entity.Transaction;
-import com.chandru.bankmanagement.entity.TransactionTypes;
+import com.chandru.bankmanagement.entity.*;
 import com.chandru.bankmanagement.exception.AccountNotFoundException;
 import com.chandru.bankmanagement.exception.BusinessRuleException;
 import com.chandru.bankmanagement.exception.CustomerNotFoundException;
@@ -62,6 +58,7 @@ public class AccountService {
     private final AccountRepository     accountRepository;
     private final CustomerRepository    customerRepository;
     private final TransactionRepository transactionRepository;
+    private final AuditService          auditService;
 
     @Value("${bank.savings.minimum-balance:1000}")
     private BigDecimal savingsMinimumBalance;
@@ -74,10 +71,12 @@ public class AccountService {
 
     public AccountService(AccountRepository accountRepository,
                           CustomerRepository customerRepository,
-                          TransactionRepository transactionRepository) {
+                          TransactionRepository transactionRepository,
+                          AuditService auditService) {
         this.accountRepository     = accountRepository;
         this.customerRepository    = customerRepository;
         this.transactionRepository = transactionRepository;
+        this.auditService          = auditService;
     }
 
     // ── STAFF: open account ────────────────────────────────────────────
@@ -126,6 +125,8 @@ public class AccountService {
         }
         log.info("Account {} ({}) opened for customer id={} by {}",
                 number, type, customer.getCustomerId(), actor.username());
+        auditService.log(AuditActions.ACCOUNT_CREATED, actor, "Account", number,
+                "SUCCESS", type + " opened for customer id=" + customer.getCustomerId());
         return ResponseMapper.toResponse(saved);
     }
 
@@ -219,6 +220,8 @@ public class AccountService {
         }
         account.setStatus(AccountStatus.FROZEN);
         log.info("Account {} frozen by {}", account.getAccountNumber(), actor.username());
+        auditService.log(AuditActions.ACCOUNT_FROZEN, actor, "Account",
+                account.getAccountNumber(), "SUCCESS", "Frozen by " + actor.username());
         return ResponseMapper.toResponse(accountRepository.save(account));
     }
 
@@ -230,6 +233,8 @@ public class AccountService {
         }
         account.setStatus(AccountStatus.ACTIVE);
         log.info("Account {} unfrozen by {}", account.getAccountNumber(), actor.username());
+        auditService.log(AuditActions.ACCOUNT_UNFROZEN, actor, "Account",
+                account.getAccountNumber(), "SUCCESS", "Unfrozen by " + actor.username());
         return ResponseMapper.toResponse(accountRepository.save(account));
     }
 
@@ -259,6 +264,9 @@ public class AccountService {
         }
         log.info("Account {} closed by {} (payout {})",
                 account.getAccountNumber(), actor.username(), balance);
+        auditService.log(AuditActions.ACCOUNT_CLOSED, actor, "Account",
+                account.getAccountNumber(), "SUCCESS",
+                "Closed by " + actor.username() + "; payout=" + rupees(balance));
         return ResponseMapper.toResponse(saved);
     }
 
@@ -301,8 +309,11 @@ public class AccountService {
 
         account.setBalance(money(account.getBalance()).add(amount));
         Account updated = accountRepository.save(account);
-        return record(updated, TransactionTypes.DEPOSIT, amount,
+        Transaction tx = record(updated, TransactionTypes.DEPOSIT, amount,
                 orDefault(description, "Cash deposit"), null, null, actor);
+        auditService.log(AuditActions.DEPOSIT_EXECUTED, actor, "Account",
+                account.getAccountNumber(), "SUCCESS", rupees(amount) + " deposited");
+        return tx;
     }
 
     private Transaction doWithdraw(Long id, BigDecimal amount, String description, Actor actor) {
@@ -313,8 +324,11 @@ public class AccountService {
 
         account.setBalance(money(account.getBalance()).subtract(amount));
         Account updated = accountRepository.save(account);
-        return record(updated, TransactionTypes.WITHDRAW, amount,
+        Transaction tx = record(updated, TransactionTypes.WITHDRAW, amount,
                 orDefault(description, "Cash withdrawal"), null, null, actor);
+        auditService.log(AuditActions.WITHDRAW_EXECUTED, actor, "Account",
+                account.getAccountNumber(), "SUCCESS", rupees(amount) + " withdrawn");
+        return tx;
     }
 
     // ── transfer ───────────────────────────────────────────────────────
@@ -361,6 +375,9 @@ public class AccountService {
 
         log.info("Transfer {} of {} from {} to {} by {}", reference, amount,
                 from.getAccountNumber(), to.getAccountNumber(), actor.username());
+        auditService.log(AuditActions.TRANSFER_EXECUTED, actor, "Account",
+                from.getAccountNumber(), "SUCCESS",
+                rupees(amount) + " → " + to.getAccountNumber() + " ref=" + reference);
         return ResponseMapper.toResponse(debit);
     }
 

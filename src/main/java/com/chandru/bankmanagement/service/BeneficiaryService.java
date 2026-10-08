@@ -4,6 +4,7 @@ import com.chandru.bankmanagement.dto.BeneficiaryRequest;
 import com.chandru.bankmanagement.dto.BeneficiaryResponse;
 import com.chandru.bankmanagement.entity.Account;
 import com.chandru.bankmanagement.entity.AccountStatus;
+import com.chandru.bankmanagement.entity.AuditActions;
 import com.chandru.bankmanagement.entity.Beneficiary;
 import com.chandru.bankmanagement.entity.Customer;
 import com.chandru.bankmanagement.exception.AccountNotFoundException;
@@ -41,13 +42,16 @@ public class BeneficiaryService {
     private final BeneficiaryRepository beneficiaryRepository;
     private final CustomerRepository    customerRepository;
     private final AccountRepository     accountRepository;
+    private final AuditService          auditService;
 
     public BeneficiaryService(BeneficiaryRepository beneficiaryRepository,
                               CustomerRepository customerRepository,
-                              AccountRepository accountRepository) {
+                              AccountRepository accountRepository,
+                              AuditService auditService) {
         this.beneficiaryRepository = beneficiaryRepository;
         this.customerRepository    = customerRepository;
         this.accountRepository     = accountRepository;
+        this.auditService          = auditService;
     }
 
     @Transactional
@@ -79,6 +83,9 @@ public class BeneficiaryService {
         Beneficiary saved = beneficiaryRepository.save(b);
         log.info("Beneficiary {} added for customer id={} by {}",
                 payee.getAccountNumber(), owner.getCustomerId(), actor.username());
+        auditService.log(AuditActions.BENEFICIARY_ADDED, actor, "Beneficiary",
+                String.valueOf(saved.getBeneficiaryId()), "SUCCESS",
+                "Account " + payee.getAccountNumber() + " added for customer id=" + owner.getCustomerId());
         return toResponse(saved);
     }
 
@@ -104,6 +111,8 @@ public class BeneficiaryService {
         }
         beneficiaryRepository.delete(b);
         log.info("Beneficiary id={} deleted by {}", id, actor.username());
+        auditService.log(AuditActions.BENEFICIARY_DELETED, actor, "Beneficiary",
+                String.valueOf(id), "SUCCESS", "Beneficiary id=" + id + " deleted");
     }
 
     // ── helpers ────────────────────────────────────────────────────────

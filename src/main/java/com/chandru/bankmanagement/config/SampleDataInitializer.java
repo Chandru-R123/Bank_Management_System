@@ -8,12 +8,16 @@ import com.chandru.bankmanagement.entity.ConsentPermission;
 import com.chandru.bankmanagement.entity.ConsentStatus;
 import com.chandru.bankmanagement.entity.Customer;
 import com.chandru.bankmanagement.entity.Transaction;
+import com.chandru.bankmanagement.entity.TransactionRequest;
+import com.chandru.bankmanagement.entity.TransactionRequestStatus;
+import com.chandru.bankmanagement.entity.TransactionRequestType;
 import com.chandru.bankmanagement.entity.TransactionTypes;
 import com.chandru.bankmanagement.repository.AccountRepository;
 import com.chandru.bankmanagement.repository.BeneficiaryRepository;
 import com.chandru.bankmanagement.repository.ConsentRepository;
 import com.chandru.bankmanagement.repository.CustomerRepository;
 import com.chandru.bankmanagement.repository.TransactionRepository;
+import com.chandru.bankmanagement.repository.TransactionRequestRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,6 +63,7 @@ public class SampleDataInitializer {
                                             TransactionRepository transactions,
                                             BeneficiaryRepository beneficiaries,
                                             ConsentRepository consents,
+                                            TransactionRequestRepository txRequests,
                                             PlatformTransactionManager transactionManager,
                                             @Value("${app.seed-sample-data:true}") boolean enabled) {
         return args -> {
@@ -72,8 +77,8 @@ public class SampleDataInitializer {
             }
             try {
                 new TransactionTemplate(transactionManager).executeWithoutResult(status ->
-                        new Seeder(customers, accounts, transactions, beneficiaries, consents).run());
-                log.info("SAMPLE DATA: seeded 5 customers, 8 accounts, transactions, beneficiaries and consents");
+                        new Seeder(customers, accounts, transactions, beneficiaries, consents, txRequests).run());
+                log.info("SAMPLE DATA: seeded 5 customers, 8 accounts, transactions, beneficiaries, consents and Maker–Checker requests");
             } catch (RuntimeException e) {
                 log.warn("SAMPLE DATA: skipped because of an error (the app still starts): {}", e.getMessage());
             }
@@ -84,21 +89,23 @@ public class SampleDataInitializer {
 
     private static final class Seeder {
 
-        private final CustomerRepository    customers;
-        private final AccountRepository     accounts;
-        private final TransactionRepository transactions;
-        private final BeneficiaryRepository beneficiaries;
-        private final ConsentRepository     consents;
+        private final CustomerRepository       customers;
+        private final AccountRepository        accounts;
+        private final TransactionRepository    transactions;
+        private final BeneficiaryRepository    beneficiaries;
+        private final ConsentRepository        consents;
+        private final TransactionRequestRepository txRequests;
         private final LocalDateTime now = LocalDateTime.now().withSecond(0).withNano(0);
 
         Seeder(CustomerRepository customers, AccountRepository accounts,
                TransactionRepository transactions, BeneficiaryRepository beneficiaries,
-               ConsentRepository consents) {
+               ConsentRepository consents, TransactionRequestRepository txRequests) {
             this.customers     = customers;
             this.accounts      = accounts;
             this.transactions  = transactions;
             this.beneficiaries = beneficiaries;
             this.consents      = consents;
+            this.txRequests    = txRequests;
         }
 
         void run() {
@@ -184,6 +191,77 @@ public class SampleDataInitializer {
                 consent(rahul, "BudgetBuddy", "Monthly budgeting and spend insights", all,
                         ConsentStatus.AWAITING_AUTHORISATION, 0, 90, Set.of(), null);
             });
+
+            // ── Maker–Checker sample requests (idempotent: skipped if ref already exists) ──
+            // Demo requests in every status so the UI has something to display.
+            // Maker = "maker-demo", Checker = "checker-demo" (Keycloak demo staff accounts)
+            //
+            // PENDING_APPROVAL — waiting for checker
+            txRequest("TXR-DEMO-PENDING-01", TransactionRequestType.DEPOSIT,
+                    TransactionRequestStatus.PENDING_APPROVAL,
+                    karthikCa, null, "25000.00",
+                    "Branch cash deposit — pending approval",
+                    "maker-demo", "maker-sub-placeholder",
+                    null, null,
+                    at(1, 10), null, null, null, null);
+
+            // PENDING_APPROVAL — a withdrawal waiting for checker
+            txRequest("TXR-DEMO-PENDING-02", TransactionRequestType.WITHDRAW,
+                    TransactionRequestStatus.PENDING_APPROVAL,
+                    vikramCa, null, "10000.00",
+                    "Vendor payment — pending approval",
+                    "maker-demo", "maker-sub-placeholder",
+                    null, null,
+                    at(0, 9), null, null, null, null);
+
+            // PENDING_APPROVAL — a transfer waiting
+            txRequest("TXR-DEMO-PENDING-03", TransactionRequestType.TRANSFER,
+                    TransactionRequestStatus.PENDING_APPROVAL,
+                    karthikCa, meeraSb, "5000.00",
+                    "Staff salary advance — pending approval",
+                    "maker-demo", "maker-sub-placeholder",
+                    null, null,
+                    at(0, 11), null, null, null, null);
+
+            // SUCCESS — already approved and executed
+            txRequest("TXR-DEMO-SUCCESS-01", TransactionRequestType.DEPOSIT,
+                    TransactionRequestStatus.SUCCESS,
+                    meeraSb, null, "15000.00",
+                    "Salary disbursement",
+                    "maker-demo", "maker-sub-placeholder",
+                    "checker-demo", "checker-sub-placeholder",
+                    at(5, 9), at(5, 10), null,
+                    "Approved and executed", null);
+
+            // SUCCESS — approved transfer
+            txRequest("TXR-DEMO-SUCCESS-02", TransactionRequestType.TRANSFER,
+                    TransactionRequestStatus.SUCCESS,
+                    vikramCa, karthikSb, "8000.00",
+                    "Inter-branch fund movement",
+                    "maker-demo", "maker-sub-placeholder",
+                    "checker-demo", "checker-sub-placeholder",
+                    at(3, 14), at(3, 15), null,
+                    null, null);
+
+            // REJECTED — checker rejected with reason
+            txRequest("TXR-DEMO-REJECTED-01", TransactionRequestType.WITHDRAW,
+                    TransactionRequestStatus.REJECTED,
+                    karthikCa, null, "50000.00",
+                    "Large cash withdrawal",
+                    "maker-demo", "maker-sub-placeholder",
+                    "checker-demo", "checker-sub-placeholder",
+                    at(7, 11), null, at(7, 14),
+                    null, "Amount exceeds daily branch limit without manager authorisation");
+
+            // CANCELLED — maker cancelled before checker acted
+            txRequest("TXR-DEMO-CANCELLED-01", TransactionRequestType.DEPOSIT,
+                    TransactionRequestStatus.CANCELLED,
+                    divyaSb, null, "3000.00",
+                    "Cancelled — duplicate entry",
+                    "maker-demo", "maker-sub-placeholder",
+                    null, null,
+                    at(2, 10), null, null,
+                    "Duplicate — cancelled by maker", null);
         }
 
         // ── builders ─────────────────────────────────────────────────────
@@ -319,6 +397,49 @@ public class SampleDataInitializer {
                 t = now.minusMinutes(Math.max(1, 24 - hour) * 5L);
             }
             return t;
+        }
+
+        /**
+         * Idempotent — skipped if a request with the same requestRef already exists.
+         * Uses placeholder sub values since Keycloak UUIDs are not known at seed time;
+         * the UI lookup is always by username in real use.
+         */
+        private void txRequest(String ref,
+                               TransactionRequestType type,
+                               TransactionRequestStatus status,
+                               Account fromAccount,
+                               Account toAccount,
+                               String amount,
+                               String description,
+                               String makerUsername, String makerUserId,
+                               String checkerUsername, String checkerUserId,
+                               LocalDateTime createdAt,
+                               LocalDateTime approvedAt,
+                               LocalDateTime rejectedAt,
+                               String remarks,
+                               String rejectionReason) {
+            if (txRequests.existsByRequestRef(ref)) return; // idempotent
+            TransactionRequest r = new TransactionRequest();
+            r.setRequestRef(ref);
+            r.setRequestType(type);
+            r.setStatus(status);
+            r.setFromAccount(fromAccount);
+            r.setToAccount(toAccount);
+            r.setAmount(new BigDecimal(amount).setScale(2));
+            r.setDescription(description);
+            r.setMakerUsername(makerUsername);
+            r.setMakerUserId(makerUserId);
+            r.setCheckerUsername(checkerUsername);
+            r.setCheckerUserId(checkerUserId);
+            r.setCreatedAt(createdAt);
+            r.setApprovedAt(approvedAt);
+            r.setRejectedAt(rejectedAt);
+            r.setRemarks(remarks);
+            r.setRejectionReason(rejectionReason);
+            if (status == TransactionRequestStatus.SUCCESS) {
+                r.setExecutedAt(approvedAt != null ? approvedAt.plusMinutes(1) : createdAt.plusHours(1));
+            }
+            txRequests.save(r);
         }
     }
 }

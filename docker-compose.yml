@@ -83,6 +83,7 @@ services:
       KC_LOG_LEVEL: INFO
     volumes:
       - ./keycloak/bank-management-realm.json:/opt/keycloak/data/import/bank-management-realm.json:ro
+      - ./keycloak/themes/bank:/opt/keycloak/themes/bank:ro
       - keycloak_data:/opt/keycloak/data
     networks:
       - bank-network
@@ -105,6 +106,21 @@ services:
       KC_ISSUER_URI: http://localhost:8080/auth/realms/bank-management
       # jwk-set-uri: internal Docker URL for key fetching
       KC_JWK_SET_URI: http://keycloak:8180/realms/bank-management/protocol/openid-connect/certs
+      # ── KYC ─────────────────────────────────────────────────────────────────
+      KYC_PROVIDER: ${KYC_PROVIDER:-MANUAL}
+      KYC_UPLOAD_DIR: /app/kyc-uploads
+      DIGILOCKER_CLIENT_ID: ${DIGILOCKER_CLIENT_ID:-}
+      DIGILOCKER_CLIENT_SECRET: ${DIGILOCKER_CLIENT_SECRET:-}
+      DIGILOCKER_REDIRECT_URI: ${DIGILOCKER_REDIRECT_URI:-}
+      # ── CAPTCHA ──────────────────────────────────────────────────────────────
+      CAPTCHA_ENABLED: ${CAPTCHA_ENABLED:-false}
+      CAPTCHA_SITE_KEY: ${CAPTCHA_SITE_KEY:-}
+      CAPTCHA_SECRET_KEY: ${CAPTCHA_SECRET_KEY:-}
+      # ── Seed data ────────────────────────────────────────────────────────────
+      SEED_SAMPLE_DATA: ${SEED_SAMPLE_DATA:-true}
+    volumes:
+      # Persistent KYC document storage — survives container restarts
+      - kyc_uploads:/app/kyc-uploads
     networks:
       - bank-network
     depends_on:
@@ -121,6 +137,8 @@ services:
       dockerfile: nginx/Dockerfile
       args:
         VITE_KEYCLOAK_URL: http://localhost:8080/auth
+        # Pass the public site key into the React build — never the secret key
+        VITE_CAPTCHA_SITE_KEY: ${CAPTCHA_SITE_KEY:-}
     container_name: bank-nginx
     ports:
       - "8080:8080"
@@ -139,3 +157,4 @@ networks:
 volumes:
   postgres_data:
   keycloak_data:
+  kyc_uploads:

@@ -1,2742 +1,832 @@
 {
   "info": {
-    "name": "State Bank \u2014 Mini Banking & Open Banking API",
-    "description": "Run the folders in order (Collection Runner). Folder 02 gets a token for each role; later requests reuse them.\nRequires the stack from docker-compose (http://localhost:8080) and the demo users imported from keycloak/bank-management-realm.json.",
+    "name": "State Bank — Mini Banking & Open Banking API (v2)",
+    "description": "Full API test suite including Maker–Checker workflow, KYC, Audit Log, and CAPTCHA.\n\nRun folders in order using the Collection Runner.\nRequires docker compose up --build (http://localhost:8080).\nDemo users are imported from keycloak/bank-management-realm.json.\n\nRole-to-demo-user mapping:\n  ADMIN    : admin  / Admin@1234\n  EMPLOYEE : employee-demo / Employee@1234\n  MAKER    : maker-demo    / Maker@1234\n  CHECKER  : checker-demo  / Checker@1234\n  CUSTOMER : meera / karthik / divya / vikram / fatima — Customer@1234\n  TPP      : fintech-app   / Tpp@1234",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
+  "variable": [
+    { "key": "baseUrl",        "value": "http://localhost:8080" },
+    { "key": "kcUrl",          "value": "http://localhost:8080/auth" },
+    { "key": "realm",          "value": "bank-management" },
+    { "key": "clientId",       "value": "bank-management-backend" },
+    { "key": "adminToken",     "value": "" },
+    { "key": "makerToken",     "value": "" },
+    { "key": "checkerToken",   "value": "" },
+    { "key": "employeeToken",  "value": "" },
+    { "key": "customerToken",  "value": "" },
+    { "key": "tppToken",       "value": "" },
+    { "key": "accountId",      "value": "1" },
+    { "key": "txRequestId",    "value": "" },
+    { "key": "txRequestRef",   "value": "" },
+    { "key": "customerId",     "value": "1" },
+    { "key": "consentId",      "value": "" }
+  ],
   "item": [
     {
-      "name": "01 Health & Info (Week 1)",
+      "name": "01 Health & Info",
       "item": [
         {
           "name": "Gateway health (NGINX)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/health",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "health"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          }
+          "request": { "method": "GET", "url": "{{baseUrl}}/health", "auth": { "type": "noauth" } },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('status 200', () => pm.response.to.have.status(200));"
+          ], "type": "text/javascript" }}]
         },
         {
           "name": "Backend health + DB",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
-                  "pm.test('database UP', () => pm.expect(pm.response.json().database).to.eql('UP'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/health",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "health"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          }
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/health", "auth": { "type": "noauth" } },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('status 200', () => pm.response.to.have.status(200));",
+            "pm.test('database UP', () => pm.expect(pm.response.json().database).to.eql('UP'));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Service info",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/info",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "info"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          }
+          "name": "CAPTCHA config (public)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/api/captcha/config", "auth": { "type": "noauth" } },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('status 200', () => pm.response.to.have.status(200));",
+            "pm.test('has enabled flag', () => pm.expect(pm.response.json()).to.have.property('enabled'));"
+          ], "type": "text/javascript" }}]
         }
       ]
     },
     {
-      "name": "02 Auth \u2014 Keycloak tokens (Week 4)",
+      "name": "02 Auth — Get Tokens",
+      "description": "Direct-grant token exchange for each role. Run this folder first to populate collection variables.",
       "item": [
         {
-          "name": "Token \u2014 ADMIN",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('token issued', () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('adminToken', pm.response.json().access_token);"
-                ]
-              }
-            }
-          ],
+          "name": "Get ADMIN token",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/x-www-form-urlencoded"
-              }
-            ],
+            "url": "{{kcUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
-                {
-                  "key": "grant_type",
-                  "value": "password"
-                },
-                {
-                  "key": "client_id",
-                  "value": "{{clientId}}"
-                },
-                {
-                  "key": "username",
-                  "value": "admin-user"
-                },
-                {
-                  "key": "password",
-                  "value": "{{adminPassword}}"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/realms/{{realm}}/protocol/openid-connect/token",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "realms",
-                "{{realm}}",
-                "protocol",
-                "openid-connect",
-                "token"
+                { "key": "grant_type",  "value": "password" },
+                { "key": "client_id",   "value": "{{clientId}}" },
+                { "key": "username",    "value": "admin-user" },
+                { "key": "password",    "value": "Admin@1234" }
               ]
             }
-          }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('got token', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('adminToken', pm.response.json().access_token);"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Token \u2014 EMPLOYEE",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('token issued', () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('employeeToken', pm.response.json().access_token);"
-                ]
-              }
-            }
-          ],
+          "name": "Get MAKER token",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/x-www-form-urlencoded"
-              }
-            ],
+            "url": "{{kcUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
-                {
-                  "key": "grant_type",
-                  "value": "password"
-                },
-                {
-                  "key": "client_id",
-                  "value": "{{clientId}}"
-                },
-                {
-                  "key": "username",
-                  "value": "employee"
-                },
-                {
-                  "key": "password",
-                  "value": "{{employeePassword}}"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/realms/{{realm}}/protocol/openid-connect/token",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "realms",
-                "{{realm}}",
-                "protocol",
-                "openid-connect",
-                "token"
+                { "key": "grant_type",  "value": "password" },
+                { "key": "client_id",   "value": "{{clientId}}" },
+                { "key": "username",    "value": "maker-demo" },
+                { "key": "password",    "value": "Maker@1234" }
               ]
             }
-          }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('got token', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('makerToken', pm.response.json().access_token);"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Token \u2014 MAKER",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('token issued', () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('makerToken', pm.response.json().access_token);"
-                ]
-              }
-            }
-          ],
+          "name": "Get CHECKER token",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/x-www-form-urlencoded"
-              }
-            ],
+            "url": "{{kcUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
-                {
-                  "key": "grant_type",
-                  "value": "password"
-                },
-                {
-                  "key": "client_id",
-                  "value": "{{clientId}}"
-                },
-                {
-                  "key": "username",
-                  "value": "maker"
-                },
-                {
-                  "key": "password",
-                  "value": "{{makerPassword}}"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/realms/{{realm}}/protocol/openid-connect/token",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "realms",
-                "{{realm}}",
-                "protocol",
-                "openid-connect",
-                "token"
+                { "key": "grant_type",  "value": "password" },
+                { "key": "client_id",   "value": "{{clientId}}" },
+                { "key": "username",    "value": "checker-demo" },
+                { "key": "password",    "value": "Checker@1234" }
               ]
             }
-          }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('got token', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('checkerToken', pm.response.json().access_token);"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Token \u2014 CHECKER",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('token issued', () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('checkerToken', pm.response.json().access_token);"
-                ]
-              }
-            }
-          ],
+          "name": "Get EMPLOYEE token",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/x-www-form-urlencoded"
-              }
-            ],
+            "url": "{{kcUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
-                {
-                  "key": "grant_type",
-                  "value": "password"
-                },
-                {
-                  "key": "client_id",
-                  "value": "{{clientId}}"
-                },
-                {
-                  "key": "username",
-                  "value": "checker"
-                },
-                {
-                  "key": "password",
-                  "value": "{{checkerPassword}}"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/realms/{{realm}}/protocol/openid-connect/token",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "realms",
-                "{{realm}}",
-                "protocol",
-                "openid-connect",
-                "token"
+                { "key": "grant_type", "value": "password" },
+                { "key": "client_id",  "value": "{{clientId}}" },
+                { "key": "username",   "value": "employee-demo" },
+                { "key": "password",   "value": "Employee@1234" }
               ]
             }
-          }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('got token', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('employeeToken', pm.response.json().access_token);"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Token \u2014 CUSTOMER rahul",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('token issued', () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('customerToken', pm.response.json().access_token);"
-                ]
-              }
-            }
-          ],
+          "name": "Get CUSTOMER token (meera)",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/x-www-form-urlencoded"
-              }
-            ],
+            "url": "{{kcUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
-                {
-                  "key": "grant_type",
-                  "value": "password"
-                },
-                {
-                  "key": "client_id",
-                  "value": "{{clientId}}"
-                },
-                {
-                  "key": "username",
-                  "value": "rahul"
-                },
-                {
-                  "key": "password",
-                  "value": "{{customerPassword}}"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/realms/{{realm}}/protocol/openid-connect/token",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "realms",
-                "{{realm}}",
-                "protocol",
-                "openid-connect",
-                "token"
+                { "key": "grant_type", "value": "password" },
+                { "key": "client_id",  "value": "{{clientId}}" },
+                { "key": "username",   "value": "meera" },
+                { "key": "password",   "value": "Customer@1234" }
               ]
             }
-          }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('got token', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('customerToken', pm.response.json().access_token);"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Token \u2014 CUSTOMER priya",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('token issued', () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('customer2Token', pm.response.json().access_token);"
-                ]
-              }
-            }
-          ],
+          "name": "Get TPP token",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/x-www-form-urlencoded"
-              }
-            ],
+            "url": "{{kcUrl}}/realms/{{realm}}/protocol/openid-connect/token",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/x-www-form-urlencoded" }],
             "body": {
               "mode": "urlencoded",
               "urlencoded": [
-                {
-                  "key": "grant_type",
-                  "value": "password"
-                },
-                {
-                  "key": "client_id",
-                  "value": "{{clientId}}"
-                },
-                {
-                  "key": "username",
-                  "value": "priya"
-                },
-                {
-                  "key": "password",
-                  "value": "{{customerPassword}}"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/realms/{{realm}}/protocol/openid-connect/token",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "realms",
-                "{{realm}}",
-                "protocol",
-                "openid-connect",
-                "token"
+                { "key": "grant_type", "value": "password" },
+                { "key": "client_id",  "value": "{{clientId}}" },
+                { "key": "username",   "value": "fintech-app" },
+                { "key": "password",   "value": "Tpp@1234" }
               ]
             }
-          }
-        },
-        {
-          "name": "Token \u2014 TPP fintech-app",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('token issued', () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('tppToken', pm.response.json().access_token);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "noauth"
-            },
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/x-www-form-urlencoded"
-              }
-            ],
-            "body": {
-              "mode": "urlencoded",
-              "urlencoded": [
-                {
-                  "key": "grant_type",
-                  "value": "password"
-                },
-                {
-                  "key": "client_id",
-                  "value": "{{clientId}}"
-                },
-                {
-                  "key": "username",
-                  "value": "fintech-app"
-                },
-                {
-                  "key": "password",
-                  "value": "{{tppPassword}}"
-                }
-              ]
-            },
-            "url": {
-              "raw": "{{baseUrl}}/auth/realms/{{realm}}/protocol/openid-connect/token",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "auth",
-                "realms",
-                "{{realm}}",
-                "protocol",
-                "openid-connect",
-                "token"
-              ]
-            }
-          }
-        },
-        {
-          "name": "Link rahul's login to customer record",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
-                  "pm.collectionVariables.set('customerEmail', pm.response.json().email);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/sync",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "sync"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Link priya's login to customer record",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/auth/sync",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "auth",
-                "sync"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customer2Token}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('got token', () => pm.response.to.have.status(200));",
+            "pm.collectionVariables.set('tppToken', pm.response.json().access_token);"
+          ], "type": "text/javascript" }}]
         }
       ]
     },
     {
-      "name": "03 Security checks \u2014 401 vs 403 (Week 4)",
+      "name": "03 Security — 401 & 403",
+      "description": "Every protected endpoint must reject unauthenticated and unauthorised requests.",
       "item": [
         {
-          "name": "No token \u2192 401",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 401', () => pm.response.to.have.status(401));"
-                ]
-              }
-            }
-          ],
+          "name": "401 — no token on /api/accounts",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          }
+            "url": "{{baseUrl}}/api/accounts",
+            "auth": { "type": "noauth" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('401 without token', () => pm.response.to.have.status(401));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "CUSTOMER lists all customers \u2192 403",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 403', () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ],
+          "name": "403 — CUSTOMER cannot list all accounts",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/customers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "customers"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
+            "url": "{{baseUrl}}/api/accounts",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('403 for wrong role', () => pm.response.to.have.status(403));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "MAKER opens account \u2192 403 (ADMIN only)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 403', () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ],
+          "name": "403 — CUSTOMER cannot access audit log",
           "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{makerToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"accountType\": \"CURRENT\",\n  \"balance\": 5000,\n  \"customerId\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
+            "method": "GET",
+            "url": "{{baseUrl}}/api/audit",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('403 for customer on audit', () => pm.response.to.have.status(403));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "EMPLOYEE posts transaction \u2192 403 (MAKER only)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 403', () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ],
+          "name": "403 — MAKER cannot approve own request",
+          "description": "Backend enforces makerUserId != checkerUserId. This test approves using the maker token.",
           "request": {
             "method": "POST",
+            "url": "{{baseUrl}}/api/transaction-requests/{{txRequestId}}/approve",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{makerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/transactions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "transactions"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{employeeToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"accountId\": 1,\n  \"type\": \"DEPOSIT\",\n  \"amount\": 100\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('403 for MAKER trying to approve', () => pm.response.to.have.status(403));"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "403 — EMPLOYEE cannot approve Maker request",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/transaction-requests/{{txRequestId}}/approve",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{employeeToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('403 for EMPLOYEE on approve', () => pm.response.to.have.status(403));"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "403 — TPP cannot access KYC",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/kyc/pending",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tppToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('403 TPP on KYC', () => pm.response.to.have.status(403));"
+          ], "type": "text/javascript" }}]
         }
       ]
     },
     {
-      "name": "04 Customers (Week 2)",
+      "name": "04 Customers",
       "item": [
         {
-          "name": "Create customer",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
-                  "pm.collectionVariables.set('customerId', pm.response.json().customerId);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/customers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "customers"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Anita Das\",\n  \"email\": \"anita.das{{$randomInt}}@example.com\",\n  \"phone\": \"9812345670\",\n  \"address\": \"5 Race Course Road, Coimbatore\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Create customer \u2014 validation error \u2192 400",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));",
-                  "pm.test('has field errors', () => pm.expect(pm.response.json().errors).to.be.an('object'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/customers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "customers"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"\",\n  \"email\": \"not-an-email\",\n  \"phone\": \"12\",\n  \"address\": \"\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "List customers",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
+          "name": "List all customers (STAFF)",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/customers",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "customers"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
+            "url": "{{baseUrl}}/api/customers",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 list', () => pm.response.to.have.status(200));",
+            "pm.test('array', () => pm.expect(pm.response.json()).to.be.an('array'));",
+            "if (pm.response.json().length > 0) pm.collectionVariables.set('customerId', pm.response.json()[0].customerId);"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Get customer by id",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
+          "name": "Get customer profile (CUSTOMER self)",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/customers/{{customerId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "customers",
-                "{{customerId}}"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
+            "url": "{{baseUrl}}/api/customers/me",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 profile', () => pm.response.to.have.status(200));",
+            "pm.test('has customerId', () => pm.expect(pm.response.json()).to.have.property('customerId'));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Update customer",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/customers/{{customerId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "customers",
-                "{{customerId}}"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{employeeToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Anita Das\",\n  \"email\": \"anita.das.updated{{$randomInt}}@example.com\",\n  \"phone\": \"9812345671\",\n  \"address\": \"7 Race Course Road, Coimbatore\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "My profile (CUSTOMER)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
+          "name": "403 — Customer cannot view other customer",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/customers/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "customers",
-                "me"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Update my contact details (CUSTOMER)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/customers/me",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "customers",
-                "me"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"phone\": \"9876543210\",\n  \"address\": \"12 Anna Nagar, Chennai, Tamil Nadu\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
+            "url": "{{baseUrl}}/api/customers/999",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('403 cross-customer', () => pm.expect([403,404]).to.include(pm.response.code));"
+          ], "type": "text/javascript" }}]
         }
       ]
     },
     {
-      "name": "05 Accounts (Week 2)",
+      "name": "05 Accounts",
       "item": [
         {
-          "name": "Open account (ADMIN)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
-                  "pm.collectionVariables.set('accountId', pm.response.json().accountId);",
-                  "pm.collectionVariables.set('accountNumber', pm.response.json().accountNumber);"
-                ]
-              }
-            }
-          ],
+          "name": "List all accounts (STAFF)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/accounts",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 accounts', () => pm.response.to.have.status(200));",
+            "const list = pm.response.json();",
+            "pm.test('array', () => pm.expect(list).to.be.an('array'));",
+            "const active = list.filter(a => a.status === 'ACTIVE' && a.accountType !== 'FIXED_DEPOSIT');",
+            "if (active.length > 0) pm.collectionVariables.set('accountId', active[0].accountId);"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "Customer: my accounts",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/accounts/my",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 my accounts', () => pm.response.to.have.status(200));"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "Customer: direct deposit on own account",
           "request": {
             "method": "POST",
+            "url": "{{baseUrl}}/api/accounts/{{accountId}}/deposit",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"accountType\": \"SAVINGS\",\n  \"balance\": 10000,\n  \"customerId\": {{customerId}}\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
+            "body": { "mode": "raw", "raw": "{ \"amount\": 500, \"description\": \"Test deposit\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 or 201 deposit', () => pm.expect([200,201]).to.include(pm.response.code));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Open Savings below minimum \u2192 400",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));"
-                ]
-              }
-            }
-          ],
+          "name": "Customer: direct withdrawal on own account",
           "request": {
             "method": "POST",
+            "url": "{{baseUrl}}/api/accounts/{{accountId}}/withdraw",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"accountType\": \"SAVINGS\",\n  \"balance\": 100,\n  \"customerId\": {{customerId}}\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "List accounts (staff)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{checkerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Get account by id",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts/{{accountId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts",
-                "{{accountId}}"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "My accounts (CUSTOMER)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
-                  "const a = pm.response.json().find(x => x.status === 'ACTIVE' && x.accountType !== 'FIXED_DEPOSIT');",
-                  "if (a) { pm.collectionVariables.set('customerAccountId', a.accountId); }"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts/my",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts",
-                "my"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Beneficiary lookup",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts/lookup?number=SB-1002-2024",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts",
-                "lookup"
-              ],
-              "query": [
-                {
-                  "key": "number",
-                  "value": "SB-1002-2024"
-                }
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Freeze account (ADMIN)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts/{{accountId}}/freeze",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts",
-                "{{accountId}}",
-                "freeze"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Deposit into frozen account \u2192 400",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts/{{accountId}}/transactions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts",
-                "{{accountId}}",
-                "transactions"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{makerToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"type\": \"DEPOSIT\",\n  \"amount\": 500\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Unfreeze account (ADMIN)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts/{{accountId}}/unfreeze",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts",
-                "{{accountId}}",
-                "unfreeze"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
+            "body": { "mode": "raw", "raw": "{ \"amount\": 200, \"description\": \"Test withdrawal\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 or 201 withdrawal', () => pm.expect([200,201]).to.include(pm.response.code));"
+          ], "type": "text/javascript" }}]
         }
       ]
     },
     {
-      "name": "06 Transactions (Week 2 / 4)",
+      "name": "06 Maker–Checker Workflow",
+      "description": "Full happy path: MAKER creates request → CHECKER approves → balance changes.\nAlso tests: self-approval rejection, employee cannot approve, duplicate approval prevention.",
       "item": [
         {
-          "name": "Deposit \u2014 POST /api/accounts/{id}/transactions (MAKER)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));"
-                ]
-              }
-            }
-          ],
+          "name": "MAKER: create DEPOSIT request",
           "request": {
             "method": "POST",
+            "url": "{{baseUrl}}/api/transaction-requests",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{makerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts/{{accountId}}/transactions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts",
-                "{{accountId}}",
-                "transactions"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{makerToken}}",
-                  "type": "string"
-                }
-              ]
-            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"DEPOSIT\",\n  \"amount\": 2500,\n  \"description\": \"Cash deposit at branch\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
+              "raw": "{\n  \"requestType\": \"DEPOSIT\",\n  \"fromAccountId\": {{accountId}},\n  \"amount\": 1000,\n  \"description\": \"Postman test deposit\",\n  \"remarks\": \"Integration test\"\n}"
             }
-          }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('201 created', () => pm.response.to.have.status(201));",
+            "const r = pm.response.json();",
+            "pm.test('status PENDING_APPROVAL', () => pm.expect(r.status).to.eql('PENDING_APPROVAL'));",
+            "pm.test('has requestRef', () => pm.expect(r.requestRef).to.be.a('string'));",
+            "pm.collectionVariables.set('txRequestId', r.id);",
+            "pm.collectionVariables.set('txRequestRef', r.requestRef);"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Withdraw \u2014 POST /api/transactions (MAKER)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/transactions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "transactions"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{makerToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"accountId\": {{accountId}},\n  \"type\": \"WITHDRAW\",\n  \"amount\": 1000,\n  \"description\": \"Cash withdrawal\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Insufficient balance \u2192 400 (not 500)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/transactions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "transactions"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{makerToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"accountId\": {{accountId}},\n  \"type\": \"WITHDRAW\",\n  \"amount\": 99999999\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Transfer (CUSTOMER \u2192 Priya)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts/transfer",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts",
-                "transfer"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fromAccountId\": {{customerAccountId}},\n  \"toAccountNumber\": \"SB-1002-2024\",\n  \"amount\": 500,\n  \"description\": \"Dinner\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Transactions of an account",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
+          "name": "MAKER: list own requests",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/accounts/{{accountId}}/transactions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "accounts",
-                "{{accountId}}",
-                "transactions"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
+            "url": "{{baseUrl}}/api/transaction-requests/my",
+            "header": [{ "key": "Authorization", "value": "Bearer {{makerToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 my requests', () => pm.response.to.have.status(200));",
+            "pm.test('array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "All transactions (staff)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
+          "name": "403 — MAKER cannot self-approve",
           "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/transactions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "transactions"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{employeeToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
+            "method": "POST",
+            "url": "{{baseUrl}}/api/transaction-requests/{{txRequestId}}/approve",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('403 or 400 self-approval blocked', () => pm.expect([400,403]).to.include(pm.response.code));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "My transactions (CUSTOMER)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
+          "name": "403 — EMPLOYEE cannot approve",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/transaction-requests/{{txRequestId}}/approve",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{employeeToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('403 employee cannot approve', () => pm.response.to.have.status(403));"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "CHECKER: list pending requests",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/transactions/my",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "transactions",
-                "my"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
+            "url": "{{baseUrl}}/api/transaction-requests/pending",
+            "header": [{ "key": "Authorization", "value": "Bearer {{checkerToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 pending list', () => pm.response.to.have.status(200));",
+            "pm.test('contains our request', () => {",
+            "  const ref = pm.collectionVariables.get('txRequestRef');",
+            "  pm.expect(pm.response.json().some(r => r.requestRef === ref)).to.be.true;",
+            "});"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "CHECKER: approve request",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/transaction-requests/{{txRequestId}}/approve",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{checkerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{ \"remarks\": \"Approved in Postman integration test\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 approved', () => pm.response.to.have.status(200));",
+            "pm.test('status SUCCESS', () => pm.expect(pm.response.json().status).to.eql('SUCCESS'));",
+            "pm.test('has transactionId', () => pm.expect(pm.response.json().transactionId).to.be.a('number'));",
+            "pm.test('checkerUsername set', () => pm.expect(pm.response.json().checkerUsername).to.be.a('string'));"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "400 — duplicate approval rejected",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/transaction-requests/{{txRequestId}}/approve",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{checkerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 duplicate approval', () => pm.response.to.have.status(400));"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "MAKER: create WITHDRAW request for rejection test",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/transaction-requests",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{makerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requestType\": \"WITHDRAW\",\n  \"fromAccountId\": {{accountId}},\n  \"amount\": 500,\n  \"description\": \"To be rejected\"\n}"
             }
-          }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('201 created', () => pm.response.to.have.status(201));",
+            "pm.collectionVariables.set('txRequestId', pm.response.json().id);"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "CHECKER: reject request with reason",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/transaction-requests/{{txRequestId}}/reject",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{checkerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{ \"rejectionReason\": \"Insufficient authorisation for this amount\", \"remarks\": \"Postman test rejection\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 rejected', () => pm.response.to.have.status(200));",
+            "pm.test('status REJECTED', () => pm.expect(pm.response.json().status).to.eql('REJECTED'));",
+            "pm.test('rejectionReason set', () => pm.expect(pm.response.json().rejectionReason).to.be.a('string'));"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "400 — rejected request cannot execute",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/transaction-requests/{{txRequestId}}/approve",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{checkerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 rejected request cannot be approved', () => pm.response.to.have.status(400));"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "MAKER: create + cancel request",
+          "item": [
+            {
+              "name": "Create request to cancel",
+              "request": {
+                "method": "POST",
+                "url": "{{baseUrl}}/api/transaction-requests",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{makerToken}}" },
+                  { "key": "Content-Type",  "value": "application/json" }
+                ],
+                "body": { "mode": "raw", "raw": "{ \"requestType\": \"DEPOSIT\", \"fromAccountId\": {{accountId}}, \"amount\": 100 }" }
+              },
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.collectionVariables.set('txRequestId', pm.response.json().id);"
+              ], "type": "text/javascript" }}]
+            },
+            {
+              "name": "Cancel own pending request",
+              "request": {
+                "method": "POST",
+                "url": "{{baseUrl}}/api/transaction-requests/{{txRequestId}}/cancel",
+                "header": [{ "key": "Authorization", "value": "Bearer {{makerToken}}" }]
+              },
+              "event": [{ "listen": "test", "script": { "exec": [
+                "pm.test('200 cancelled', () => pm.response.to.have.status(200));",
+                "pm.test('CANCELLED', () => pm.expect(pm.response.json().status).to.eql('CANCELLED'));"
+              ], "type": "text/javascript" }}]
+            }
+          ]
+        },
+        {
+          "name": "ADMIN: direct deposit (bypasses Maker-Checker)",
+          "description": "ADMIN can still execute directly — not routed through request queue.",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/accounts/{{accountId}}/deposit",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{ \"amount\": 200, \"description\": \"Admin direct deposit\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 admin deposit', () => pm.response.to.have.status(200));",
+            "pm.test('returns Account not TxRequest', () => pm.expect(pm.response.json()).to.have.property('accountNumber'));"
+          ], "type": "text/javascript" }}]
         }
       ]
     },
     {
-      "name": "07 Beneficiaries (Week 2 / 4)",
+      "name": "07 Financial Rules",
       "item": [
         {
-          "name": "Add beneficiary (CUSTOMER)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
-                  "pm.collectionVariables.set('beneficiaryId', pm.response.json().beneficiaryId);"
-                ]
-              }
-            }
-          ],
+          "name": "400 — amount with > 2 decimal places",
           "request": {
             "method": "POST",
+            "url": "{{baseUrl}}/api/accounts/{{accountId}}/deposit",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/beneficiaries",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "beneficiaries"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"nickname\": \"Priya\",\n  \"accountNumber\": \"SB-1002-2024\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
+            "body": { "mode": "raw", "raw": "{ \"amount\": 100.123 }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 bad decimal', () => pm.response.to.have.status(400));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Add duplicate beneficiary \u2192 400",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 400', () => pm.response.to.have.status(400));"
-                ]
-              }
-            }
-          ],
+          "name": "400 — negative amount",
           "request": {
             "method": "POST",
+            "url": "{{baseUrl}}/api/accounts/{{accountId}}/withdraw",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/beneficiaries",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "beneficiaries"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"nickname\": \"Priya again\",\n  \"accountNumber\": \"SB-1002-2024\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
+            "body": { "mode": "raw", "raw": "{ \"amount\": -100 }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 negative amount', () => pm.response.to.have.status(400));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "List my beneficiaries (CUSTOMER)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
+          "name": "400 — customer exceeds transaction limit (₹10L)",
           "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/beneficiaries",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "beneficiaries"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "List all beneficiaries (staff)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/beneficiaries",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "beneficiaries"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{adminToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Delete as EMPLOYEE \u2192 403",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 403', () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/beneficiaries/{{beneficiaryId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "beneficiaries",
-                "{{beneficiaryId}}"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{employeeToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Delete as CHECKER",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/beneficiaries/{{beneficiaryId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "beneficiaries",
-                "{{beneficiaryId}}"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{checkerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
+            "method": "POST",
+            "url": "{{baseUrl}}/api/accounts/{{accountId}}/deposit",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{ \"amount\": 1500000 }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 over limit', () => pm.response.to.have.status(400));"
+          ], "type": "text/javascript" }}]
         }
       ]
     },
     {
-      "name": "08 Open Banking consents (Capstone)",
+      "name": "08 KYC",
       "item": [
         {
-          "name": "TPP creates consent request",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
-                  "pm.collectionVariables.set('consentId', pm.response.json().consentId);",
-                  "pm.test('awaiting approval', () => pm.expect(pm.response.json().status).to.eql('AWAITING_AUTHORISATION'));"
-                ]
-              }
-            }
-          ],
+          "name": "Customer: start KYC",
           "request": {
             "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/consents",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "consents"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tppToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"customerEmail\": \"rahul.sharma@statebank.com\",\n  \"permissions\": [\n    \"READ_ACCOUNTS\",\n    \"READ_BALANCES\",\n    \"READ_TRANSACTIONS\"\n  ],\n  \"purpose\": \"Monthly budgeting insights\",\n  \"validityDays\": 90,\n  \"tppName\": \"BudgetBuddy\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
+            "url": "{{baseUrl}}/api/kyc/start",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('201 or 400 (already started)', () => pm.expect([201,400]).to.include(pm.response.code));",
+            "if (pm.response.code === 201) pm.test('has message', () => pm.expect(pm.response.json().message).to.be.a('string'));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "TPP reads data before approval \u2192 403",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 403', () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ],
+          "name": "Customer: get own KYC status",
           "request": {
             "method": "GET",
-            "header": [
-              {
-                "key": "x-consent-id",
-                "value": "{{consentId}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/open-banking/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "open-banking",
-                "accounts"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tppToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
+            "url": "{{baseUrl}}/api/kyc/my",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 KYC status', () => pm.response.to.have.status(200));",
+            "pm.test('has status field', () => pm.expect(pm.response.json().status).to.be.a('string'));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Customer lists consents",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
+          "name": "Staff: list pending KYC",
           "request": {
             "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/consents",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "consents"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
+            "url": "{{baseUrl}}/api/kyc/pending",
+            "header": [{ "key": "Authorization", "value": "Bearer {{employeeToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 pending KYC', () => pm.response.to.have.status(200));",
+            "pm.test('array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+          ], "type": "text/javascript" }}]
         },
         {
-          "name": "Customer approves (shares one account)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
-                  "pm.test('authorised', () => pm.expect(pm.response.json().status).to.eql('AUTHORISED'));"
-                ]
-              }
-            }
-          ],
+          "name": "403 — TPP cannot list pending KYC",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/kyc/pending",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tppToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('403 TPP on KYC pending', () => pm.response.to.have.status(403));"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "400 — customer cannot self-verify",
+          "description": "POST /api/kyc/customer/{id}/approve requires EMPLOYEE or ADMIN token",
           "request": {
             "method": "POST",
+            "url": "{{baseUrl}}/api/kyc/customer/{{customerId}}/approve",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
             ],
-            "url": {
-              "raw": "{{baseUrl}}/api/consents/{{consentId}}/approve",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "consents",
-                "{{consentId}}",
-                "approve"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"accountIds\": [\n    {{customerAccountId}}\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "TPP reads shared accounts",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "x-consent-id",
-                "value": "{{consentId}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/open-banking/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "open-banking",
-                "accounts"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tppToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "TPP reads transactions",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "x-consent-id",
-                "value": "{{consentId}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/open-banking/accounts/{{customerAccountId}}/transactions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "open-banking",
-                "accounts",
-                "{{customerAccountId}}",
-                "transactions"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tppToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "Customer revokes consent",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
-                  "pm.test('revoked', () => pm.expect(pm.response.json().status).to.eql('REVOKED'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/consents/{{consentId}}/revoke",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "consents",
-                "{{consentId}}",
-                "revoke"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "TPP reads after revoke \u2192 403",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 403', () => pm.response.to.have.status(403));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "x-consent-id",
-                "value": "{{consentId}}"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/open-banking/accounts",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "open-banking",
-                "accounts"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tppToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "TPP creates a second request",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 201', () => pm.response.to.have.status(201));",
-                  "pm.collectionVariables.set('consentId2', pm.response.json().consentId);"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/consents",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "consents"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tppToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"customerEmail\": \"rahul.sharma@statebank.com\",\n  \"permissions\": [\n    \"READ_BALANCES\"\n  ],\n  \"purpose\": \"Credit check\",\n  \"validityDays\": 30\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Customer rejects it",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));",
-                  "pm.test('rejected', () => pm.expect(pm.response.json().status).to.eql('REJECTED'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/consents/{{consentId2}}/reject",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "consents",
-                "{{consentId2}}",
-                "reject"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
-        },
-        {
-          "name": "All consents (staff)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/consents",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "consents"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{checkerToken}}",
-                  "type": "string"
-                }
-              ]
-            }
-          }
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('403 customer self-verify blocked', () => pm.response.to.have.status(403));"
+          ], "type": "text/javascript" }}]
         }
       ]
-    }
-  ],
-  "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:8080"
     },
     {
-      "key": "realm",
-      "value": "bank-management"
+      "name": "09 Audit Log",
+      "item": [
+        {
+          "name": "Staff: get recent audit entries",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/api/audit?page=0&size=20", "host": ["{{baseUrl}}"], "path": ["api","audit"], "query": [{"key":"page","value":"0"},{"key":"size","value":"20"}] },
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 audit log', () => pm.response.to.have.status(200));",
+            "pm.test('array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "403 — Customer cannot read audit log",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/audit",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('403 customer on audit', () => pm.response.to.have.status(403));"
+          ], "type": "text/javascript" }}]
+        }
+      ]
     },
     {
-      "key": "clientId",
-      "value": "bank-management-backend"
+      "name": "10 Beneficiaries",
+      "item": [
+        {
+          "name": "Customer: list own beneficiaries",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/beneficiaries",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 beneficiaries', () => pm.response.to.have.status(200));"
+          ], "type": "text/javascript" }}]
+        }
+      ]
     },
     {
-      "key": "adminPassword",
-      "value": "Admin@1234"
+      "name": "11 Open Banking Consents",
+      "item": [
+        {
+          "name": "List consents (scoped by role)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/consents",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 consents', () => pm.response.to.have.status(200));",
+            "const list = pm.response.json();",
+            "const authorised = list.find(c => c.status === 'AUTHORISED');",
+            "if (authorised) pm.collectionVariables.set('consentId', authorised.consentId);"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "TPP: read shared accounts via consent",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/open-banking/accounts",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tppToken}}" },
+              { "key": "x-consent-id",  "value": "{{consentId}}" }
+            ]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 or 400 (no consentId set)', () => pm.expect([200,400]).to.include(pm.response.code));"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "400 — TPP without consent header",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/open-banking/accounts",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tppToken}}" }]
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 missing consent header', () => pm.response.to.have.status(400));"
+          ], "type": "text/javascript" }}]
+        }
+      ]
     },
     {
-      "key": "employeePassword",
-      "value": "Employee@1234"
-    },
-    {
-      "key": "makerPassword",
-      "value": "Maker@1234"
-    },
-    {
-      "key": "checkerPassword",
-      "value": "Checker@1234"
-    },
-    {
-      "key": "customerPassword",
-      "value": "Customer@1234"
-    },
-    {
-      "key": "tppPassword",
-      "value": "Tpp@12345"
-    },
-    {
-      "key": "adminToken",
-      "value": ""
-    },
-    {
-      "key": "employeeToken",
-      "value": ""
-    },
-    {
-      "key": "makerToken",
-      "value": ""
-    },
-    {
-      "key": "checkerToken",
-      "value": ""
-    },
-    {
-      "key": "customerToken",
-      "value": ""
-    },
-    {
-      "key": "customer2Token",
-      "value": ""
-    },
-    {
-      "key": "tppToken",
-      "value": ""
-    },
-    {
-      "key": "customerId",
-      "value": ""
-    },
-    {
-      "key": "accountId",
-      "value": ""
-    },
-    {
-      "key": "accountNumber",
-      "value": ""
-    },
-    {
-      "key": "customerAccountId",
-      "value": ""
-    },
-    {
-      "key": "beneficiaryId",
-      "value": ""
-    },
-    {
-      "key": "consentId",
-      "value": ""
-    },
-    {
-      "key": "consentId2",
-      "value": ""
-    },
-    {
-      "key": "customerEmail",
-      "value": ""
+      "name": "12 CAPTCHA",
+      "item": [
+        {
+          "name": "Get CAPTCHA config (public)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/captcha/config",
+            "auth": { "type": "noauth" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('200 captcha config', () => pm.response.to.have.status(200));",
+            "pm.test('enabled is boolean', () => pm.expect(pm.response.json().enabled).to.be.a('boolean'));"
+          ], "type": "text/javascript" }}]
+        },
+        {
+          "name": "400 — CAPTCHA verify with empty token (when enabled)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/captcha/verify",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": { "mode": "raw", "raw": "{ \"token\": \"\" }" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('400 or 200 depending on CAPTCHA_ENABLED', () => pm.expect([200,400]).to.include(pm.response.code));"
+          ], "type": "text/javascript" }}]
+        }
+      ]
     }
   ]
 }

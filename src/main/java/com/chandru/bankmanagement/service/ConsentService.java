@@ -7,6 +7,7 @@ import com.chandru.bankmanagement.dto.OpenBankingAccountResponse;
 import com.chandru.bankmanagement.dto.TransactionResponse;
 import com.chandru.bankmanagement.entity.Account;
 import com.chandru.bankmanagement.entity.AccountStatus;
+import com.chandru.bankmanagement.entity.AuditActions;
 import com.chandru.bankmanagement.entity.Consent;
 import com.chandru.bankmanagement.entity.ConsentPermission;
 import com.chandru.bankmanagement.entity.ConsentStatus;
@@ -57,15 +58,18 @@ public class ConsentService {
     private final CustomerRepository    customerRepository;
     private final AccountRepository     accountRepository;
     private final TransactionRepository transactionRepository;
+    private final AuditService          auditService;
 
     public ConsentService(ConsentRepository consentRepository,
                           CustomerRepository customerRepository,
                           AccountRepository accountRepository,
-                          TransactionRepository transactionRepository) {
+                          TransactionRepository transactionRepository,
+                          AuditService auditService) {
         this.consentRepository     = consentRepository;
         this.customerRepository    = customerRepository;
         this.accountRepository     = accountRepository;
         this.transactionRepository = transactionRepository;
+        this.auditService          = auditService;
     }
 
     // ── TPP (or ADMIN): create request ─────────────────────────────────
@@ -103,6 +107,9 @@ public class ConsentService {
 
         log.info("Consent {} requested by {} for customer id={}",
                 saved.getConsentId(), actor.username(), customer.getCustomerId());
+        auditService.log(AuditActions.CONSENT_CREATED, actor, "Consent",
+                saved.getConsentId(), "AWAITING_AUTHORISATION",
+                "TPP=" + actor.username() + " for customer id=" + customer.getCustomerId());
         return toResponse(saved);
     }
 
@@ -157,6 +164,8 @@ public class ConsentService {
         c.setAccounts(shared);
         changeStatus(c, ConsentStatus.AUTHORISED, actor);
         log.info("Consent {} authorised by {} for {} account(s)", id, actor.username(), shared.size());
+        auditService.log(AuditActions.CONSENT_APPROVED, actor, "Consent", id,
+                "AUTHORISED", "Shared " + shared.size() + " account(s)");
         return toResponse(consentRepository.save(c));
     }
 
@@ -168,6 +177,7 @@ public class ConsentService {
         ensureAwaiting(c);
         changeStatus(c, ConsentStatus.REJECTED, actor);
         log.info("Consent {} rejected by {}", id, actor.username());
+        auditService.log(AuditActions.CONSENT_REJECTED, actor, "Consent", id, "REJECTED", null);
         return toResponse(consentRepository.save(c));
     }
 
@@ -187,6 +197,7 @@ public class ConsentService {
         }
         changeStatus(c, ConsentStatus.REVOKED, actor);
         log.info("Consent {} revoked by {}", id, actor.username());
+        auditService.log(AuditActions.CONSENT_REVOKED, actor, "Consent", id, "REVOKED", null);
         return toResponse(consentRepository.save(c));
     }
 

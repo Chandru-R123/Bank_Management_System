@@ -12,6 +12,11 @@
   "bruteForceProtected": true,
   "rememberMe": true,
   "accessTokenLifespan": 3600,
+  "loginTheme": "bank",
+  "accountTheme": "keycloak",
+  "adminTheme": "keycloak.v2",
+  "emailTheme": "keycloak",
+  "registrationFlow": "registration with recaptcha",
   "roles": {
     "realm": [
       {
@@ -497,6 +502,81 @@
       "realmRoles": [
         "CUSTOMER"
       ]
+    }
+  ]
+,
+  "authenticationFlows": [
+    {
+      "alias": "registration with recaptcha",
+      "description": "Registration flow with Google reCAPTCHA v2",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "registration-page-form",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true,
+          "flowAlias": "registration form with recaptcha"
+        }
+      ]
+    },
+    {
+      "alias": "registration form with recaptcha",
+      "description": "Registration form including reCAPTCHA",
+      "providerId": "form-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "registration-user-creation",
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "authenticator": "registration-profile-action",
+          "requirement": "REQUIRED",
+          "priority": 40,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "authenticator": "registration-recaptcha-action",
+          "requirement": "REQUIRED",
+          "priority": 60,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false,
+          "authenticatorConfig": "recaptcha-config"
+        },
+        {
+          "authenticator": "registration-password-action",
+          "requirement": "REQUIRED",
+          "priority": 50,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "authenticator": "registration-terms-and-conditions",
+          "requirement": "DISABLED",
+          "priority": 70,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        }
+      ]
+    }
+  ],
+  "authenticatorConfig": [
+    {
+      "alias": "recaptcha-config",
+      "config": {
+        "site.key": "6Lcu294tAAAAADe_z24cAp6HzRY6dmjwTgS1MsUP",
+        "secret": "6Lcu294tAAAAAEfM3t69EfOyPf1efckxbwWTulhc",
+        "useRecaptchaNet": "false"
+      }
     }
   ]
 }

@@ -1,20 +1,14 @@
 import keycloak from './keycloak';
 
 /**
- * API base URL — configurable per environment (Week 3 requirement).
+ * API base URL — configurable per environment.
  *   Docker / NGINX gateway:  /api                      (default, same origin)
  *   Direct to Spring Boot:   http://localhost:8081/api (set in .env.local)
  */
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '');
 
-/**
- * Returns a fresh access token, refreshing silently if it expires within
- * 30 seconds.  Keycloak handles the PKCE / token-refresh mechanics.
- */
 async function getToken(): Promise<string> {
-  // Refresh if the token expires in < 30 s
   await keycloak.updateToken(30).catch(() => {
-    // Refresh failed (session ended) — send user back to Keycloak login
     keycloak.login();
     throw new Error('Your session has expired — redirecting to sign in');
   });
@@ -28,13 +22,11 @@ async function request<T>(
   extraHeaders: Record<string, string> = {},
 ): Promise<T> {
   const token = await getToken();
-
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token}`,
     ...extraHeaders,
   };
-
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
@@ -45,23 +37,33 @@ async function request<T>(
   } catch {
     throw new Error('Cannot reach the server. Check your connection and try again.');
   }
-
   const text = await res.text();
   let data: unknown;
-  try {
-    data = text ? JSON.parse(text) : undefined;
-  } catch {
-    data = text;
-  }
-
+  try { data = text ? JSON.parse(text) : undefined; } catch { data = text; }
   if (!res.ok) {
-    if (res.status === 401) {
-      // Token rejected — kick back to Keycloak
-      keycloak.login();
-    }
+    if (res.status === 401) keycloak.login();
     throw new Error(extractMessage(data, res.status));
   }
+  return data as T;
+}
 
+/** Multipart/form-data upload — skips Content-Type so browser sets the boundary. */
+async function upload<T>(path: string, formData: FormData): Promise<T> {
+  const token = await getToken();
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+  } catch {
+    throw new Error('Cannot reach the server. Check your connection and try again.');
+  }
+  const text = await res.text();
+  let data: unknown;
+  try { data = text ? JSON.parse(text) : undefined; } catch { data = text; }
+  if (!res.ok) throw new Error(extractMessage(data, res.status));
   return data as T;
 }
 
@@ -78,7 +80,7 @@ function extractMessage(data: unknown, status: number): string {
   return `Request failed (${status})`;
 }
 
-// ── Auth helpers (derived from the live Keycloak token) ───────────────────────
+// ── Auth helpers ──────────────────────────────────────────────────────────────
 
 type TokenClaims = Record<string, unknown> & {
   realm_access?: { roles?: string[] };
@@ -92,7 +94,6 @@ function claims(): TokenClaims {
   return (keycloak.tokenParsed ?? {}) as TokenClaims;
 }
 
-/** Role set extracted from realm_access.roles in the Keycloak JWT. */
 export function getRoles(): string[] {
   return claims().realm_access?.roles ?? [];
 }
@@ -101,31 +102,44 @@ export function hasRole(role: string): boolean {
   return getRoles().includes(role);
 }
 
-export function isAdmin(): boolean {
-  return hasRole('ADMIN');
-}
+export function isAdmin(): boolean { return hasRole('ADMIN'); }
 
-/** Anyone working at the bank — can see every customer and account. */
+/** Anyone working at the bank. */
 export function isStaff(): boolean {
   return ['ADMIN', 'EMPLOYEE', 'MAKER', 'CHECKER'].some(hasRole);
 }
 
-/** May move money on any account (ADMIN or MAKER). */
-export function canTransact(): boolean {
+/** MAKER role (ADMIN also satisfies). Direct financial operations now go through Maker-Checker. */
+export function isMaker(): boolean {
   return hasRole('ADMIN') || hasRole('MAKER');
 }
 
-/** May perform verification actions (ADMIN or CHECKER). */
+/** Pure MAKER without CHECKER — routes deposit/withdraw/transfer to request queue. */
+export function isPureMaker(): boolean {
+  return hasRole('MAKER') && !hasRole('CHECKER') && !hasRole('ADMIN');
+}
+
+/** CHECKER role (ADMIN also satisfies). Approves/rejects Maker requests. */
 export function isChecker(): boolean {
   return hasRole('ADMIN') || hasRole('CHECKER');
 }
 
-/** May create / edit customer KYC records. */
+/** May move money directly (ADMIN or CUSTOMER on own account).
+ *  @deprecated Use isMaker()/isPureMaker() for staff logic; kept for customer account page */
+export function canTransact(): boolean {
+  return hasRole('ADMIN') || hasRole('MAKER') || hasRole('CUSTOMER');
+}
+
+/** ADMIN or EMPLOYEE — customer management, KYC review. */
 export function canManageCustomers(): boolean {
   return hasRole('ADMIN') || hasRole('EMPLOYEE');
 }
 
-/** Third-Party Provider (fintech app) using Open Banking. */
+export function canReviewKyc(): boolean {
+  return hasRole('ADMIN') || hasRole('EMPLOYEE');
+}
+
+/** Third-Party Provider. */
 export function isTpp(): boolean {
   return hasRole('TPP') && !isStaff();
 }
@@ -134,7 +148,10 @@ export function getUsername(): string {
   return claims().preferred_username ?? 'User';
 }
 
-/** Full name from the token when available, otherwise the username. */
+export function getUserId(): string {
+  return (keycloak.tokenParsed?.sub as string | undefined) ?? '';
+}
+
 export function getDisplayName(): string {
   const c = claims();
   return c.name || c.given_name || c.preferred_username || 'User';
@@ -142,8 +159,10 @@ export function getDisplayName(): string {
 
 export function getRoleLabel(): string {
   if (isAdmin()) return 'Administrator';
-  const staff = [hasRole('MAKER') && 'Maker', hasRole('CHECKER') && 'Checker'].filter(Boolean);
-  if (staff.length) return `Employee · ${staff.join(' & ')}`;
+  const parts: string[] = [];
+  if (hasRole('MAKER'))   parts.push('Maker');
+  if (hasRole('CHECKER')) parts.push('Checker');
+  if (parts.length) return `Employee · ${parts.join(' & ')}`;
   if (hasRole('EMPLOYEE')) return 'Employee';
   if (isTpp()) return 'Third-party provider';
   return 'Customer';
@@ -165,13 +184,11 @@ export interface CustomerRequest {
   phone: string;
   address: string;
 }
-/** Result of an action that may also send an email. */
 export interface ActionResult<T> {
   data: T;
   emailSent: boolean;
   message: string;
 }
-
 export interface ProfileUpdate {
   phone: string;
   address: string;
@@ -185,20 +202,15 @@ export const customers = {
   create:    (data: CustomerRequest)          => request<Customer>  ('POST',   '/customers', data),
   update:    (id: number, d: CustomerRequest) => request<Customer>  ('PUT',    `/customers/${id}`, d),
   delete:    (id: number)                     => request<string>    ('DELETE', `/customers/${id}`),
-  /** Called after CUSTOMER login to link this KC user to a PostgreSQL row */
   sync:      ()                               => request<Customer>  ('POST',   '/auth/sync'),
-  /** Called when staff open Customers/Dashboard — pulls all KC registrations into DB */
   adminSync: ()                               => request<{ synced: number }>('POST', '/admin/sync-customers'),
-  /** Create the Keycloak login for a branch customer and email a "set password" link */
   enableOnlineBanking: (id: number)           => request<ActionResult<Customer>>('POST', `/customers/${id}/online-banking`),
-  /** Email a "reset your password" link to a customer with online banking */
   sendPasswordEmail:   (id: number)           => request<ActionResult<Customer>>('POST', `/customers/${id}/online-banking/password-email`),
 };
 
-// ── Staff (ADMIN) ─────────────────────────────────────────────────────────────
+// ── Staff ─────────────────────────────────────────────────────────────────────
 
 export type StaffRole = 'ADMIN' | 'EMPLOYEE' | 'MAKER' | 'CHECKER';
-
 export interface StaffMember {
   id: string;
   username: string;
@@ -218,7 +230,6 @@ export interface StaffRequest {
   phone: string;
   address?: string;
   roles: StaffRole[];
-  /** Temporary password; omit to email a "set password" link instead. */
   password?: string;
 }
 
@@ -232,15 +243,9 @@ export const staff = {
   setPassword:   (id: string, password: string)    => request<ActionResult<StaffMember>>('PUT', `/admin/staff/${id}/password`, { password }),
 };
 
-/** Keycloak user id of the signed-in user ("sub" claim). */
-export function getUserId(): string {
-  return (keycloak.tokenParsed?.sub as string | undefined) ?? '';
-}
-
 // ── Accounts ──────────────────────────────────────────────────────────────────
 
 export type AccountStatus = 'ACTIVE' | 'FROZEN' | 'CLOSED';
-
 export interface Account {
   accountId: number;
   accountNumber: string;
@@ -282,10 +287,10 @@ export const accounts = {
   freeze:    (id: number)                        => request<Account>  ('POST', `/accounts/${id}/freeze`),
   unfreeze:  (id: number)                        => request<Account>  ('POST', `/accounts/${id}/unfreeze`),
   deposit:   (id: number, amount: number, description?: string) =>
-    request<Account>('POST', `/accounts/${id}/deposit`, { amount, description }),
+    request<unknown>('POST', `/accounts/${id}/deposit`, { amount, description }),
   withdraw:  (id: number, amount: number, description?: string) =>
-    request<Account>('POST', `/accounts/${id}/withdraw`, { amount, description }),
-  transfer:  (input: TransferInput)              => request<Transaction>('POST', '/accounts/transfer', input),
+    request<unknown>('POST', `/accounts/${id}/withdraw`, { amount, description }),
+  transfer:  (input: TransferInput) => request<unknown>('POST', '/accounts/transfer', input),
 };
 
 // ── Transactions ──────────────────────────────────────────────────────────────
@@ -303,7 +308,6 @@ export interface Transaction {
   referenceId: string | null;
   performedBy: string | null;
 }
-
 export interface PostTransaction {
   accountId?: number;
   type: 'DEPOSIT' | 'WITHDRAW';
@@ -312,7 +316,7 @@ export interface PostTransaction {
 }
 
 export const transactions = {
-  post:         (data: PostTransaction) => request<Transaction>('POST', '/transactions', data),
+  post:         (data: PostTransaction) => request<unknown>('POST', '/transactions', data),
   getAll:       ()                  => request<Transaction[]>('GET', '/transactions'),
   getMy:        ()                  => request<Transaction[]>('GET', '/transactions/my'),
   getByAccount: (accountId: number) => request<Transaction[]>('GET', `/accounts/${accountId}/transactions`),
@@ -348,7 +352,6 @@ export const beneficiaries = {
 
 export type ConsentStatus = 'AWAITING_AUTHORISATION' | 'AUTHORISED' | 'REJECTED' | 'REVOKED' | 'EXPIRED';
 export type ConsentPermission = 'READ_ACCOUNTS' | 'READ_BALANCES' | 'READ_TRANSACTIONS';
-
 export interface Consent {
   consentId: string;
   status: ConsentStatus;
@@ -382,17 +385,173 @@ export interface OpenBankingAccount {
 }
 
 export const consents = {
-  getAll:   ()                                => request<Consent[]>('GET', '/consents'),
-  create:   (data: ConsentRequest)            => request<Consent>  ('POST', '/consents', data),
-  approve:  (id: string, accountIds: number[]) => request<Consent> ('POST', `/consents/${encodeURIComponent(id)}/approve`, { accountIds }),
-  reject:   (id: string)                      => request<Consent>  ('POST', `/consents/${encodeURIComponent(id)}/reject`),
-  revoke:   (id: string)                      => request<Consent>  ('POST', `/consents/${encodeURIComponent(id)}/revoke`),
+  getAll:   ()                                 => request<Consent[]>('GET', '/consents'),
+  create:   (data: ConsentRequest)             => request<Consent>  ('POST', '/consents', data),
+  approve:  (id: string, accountIds: number[]) => request<Consent>  ('POST', `/consents/${encodeURIComponent(id)}/approve`, { accountIds }),
+  reject:   (id: string)                       => request<Consent>  ('POST', `/consents/${encodeURIComponent(id)}/reject`),
+  revoke:   (id: string)                       => request<Consent>  ('POST', `/consents/${encodeURIComponent(id)}/revoke`),
 };
 
-/** Account Information APIs — every call carries the consent id header. */
 export const openBanking = {
-  accounts: (consentId: string) =>
+  accounts:     (consentId: string) =>
     request<OpenBankingAccount[]>('GET', '/open-banking/accounts', undefined, { 'x-consent-id': consentId }),
   transactions: (consentId: string, accountId: number) =>
     request<Transaction[]>('GET', `/open-banking/accounts/${accountId}/transactions`, undefined, { 'x-consent-id': consentId }),
+};
+
+// ── Maker–Checker Transaction Requests ────────────────────────────────────────
+
+export type TxRequestStatus =
+  | 'PENDING_APPROVAL' | 'APPROVED' | 'PROCESSING'
+  | 'SUCCESS' | 'REJECTED' | 'FAILED' | 'CANCELLED' | 'REVERSED';
+export type TxRequestType = 'DEPOSIT' | 'WITHDRAW' | 'TRANSFER';
+
+export interface TxRequest {
+  id: number;
+  requestRef: string;
+  requestType: TxRequestType;
+  status: TxRequestStatus;
+  fromAccountId: number;
+  fromAccountNumber: string;
+  fromAccountType: string;
+  toAccountId: number | null;
+  toAccountNumber: string | null;
+  amount: number;
+  description: string | null;
+  makerUserId: string;
+  makerUsername: string;
+  checkerUserId: string | null;
+  checkerUsername: string | null;
+  createdAt: string;
+  approvedAt: string | null;
+  rejectedAt: string | null;
+  executedAt: string | null;
+  rejectionReason: string | null;
+  remarks: string | null;
+  transactionId: number | null;
+  balanceAfter: number | null;
+}
+export interface CreateTxRequest {
+  requestType: TxRequestType;
+  fromAccountId: number;
+  toAccountId?: number;
+  toAccountNumber?: string;
+  amount: number;
+  description?: string;
+  remarks?: string;
+}
+export interface CheckerAction {
+  rejectionReason?: string;
+  remarks?: string;
+}
+
+export const txRequests = {
+  create:     (data: CreateTxRequest) => request<TxRequest>   ('POST', '/transaction-requests', data),
+  getMy:      ()                       => request<TxRequest[]> ('GET',  '/transaction-requests/my'),
+  getPending: ()                       => request<TxRequest[]> ('GET',  '/transaction-requests/pending'),
+  getAll:     ()                       => request<TxRequest[]> ('GET',  '/transaction-requests'),
+  getById:    (id: number)             => request<TxRequest>   ('GET',  `/transaction-requests/${id}`),
+  approve:    (id: number, data?: CheckerAction) =>
+    request<TxRequest>('POST', `/transaction-requests/${id}/approve`, data ?? {}),
+  reject:     (id: number, data: CheckerAction) =>
+    request<TxRequest>('POST', `/transaction-requests/${id}/reject`, data),
+  cancel:     (id: number)             => request<TxRequest>   ('POST', `/transaction-requests/${id}/cancel`),
+};
+
+// ── KYC ───────────────────────────────────────────────────────────────────────
+
+export type KycStatus = 'NOT_STARTED' | 'PENDING' | 'UNDER_REVIEW' | 'VERIFIED' | 'REJECTED';
+export type KycMethod = 'MANUAL' | 'DIGILOCKER' | 'MOCK';
+export type KycDocumentType = 'IDENTITY' | 'ADDRESS' | 'PHOTOGRAPH' | 'OTHER';
+
+export interface KycDocument {
+  id: number;
+  documentType: KycDocumentType;
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  status: string;
+  uploadedAt: string;
+}
+export interface KycRecord {
+  id: number | null;
+  customerId: number;
+  customerName: string;
+  customerEmail: string;
+  status: KycStatus;
+  method: KycMethod | null;
+  initiatedAt: string | null;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  verifiedAt: string | null;
+  reviewedBy: string | null;
+  rejectionReason: string | null;
+  reviewerNotes: string | null;
+  documents: KycDocument[];
+}
+export interface KycInitiationResult {
+  redirectUrl: string | null;
+  message: string;
+  providerRef: string | null;
+}
+export interface KycReviewRequest {
+  rejectionReason?: string;
+  reviewerNotes?: string;
+}
+
+export const kyc = {
+  start:       ()                                      => request<KycInitiationResult>('POST', '/kyc/start'),
+  submit:      ()                                      => request<KycRecord>           ('POST', '/kyc/submit'),
+  getMy:       ()                                      => request<KycRecord>           ('GET',  '/kyc/my'),
+  uploadDocument: (type: KycDocumentType, file: File)  => {
+    const fd = new FormData();
+    fd.append('type', type);
+    fd.append('file', file);
+    return upload<KycDocument>('/kyc/documents', fd);
+  },
+  // Staff endpoints
+  listPending:     ()                              => request<KycRecord[]>('GET',  '/kyc/pending'),
+  getForCustomer:  (customerId: number)            => request<KycRecord>  ('GET',  `/kyc/customer/${customerId}`),
+  approve:         (customerId: number, data?: KycReviewRequest) =>
+    request<KycRecord>('POST', `/kyc/customer/${customerId}/approve`, data ?? {}),
+  reject:          (customerId: number, data: KycReviewRequest) =>
+    request<KycRecord>('POST', `/kyc/customer/${customerId}/reject`, data),
+  /** Returns a download URL (backend streams the file — not a direct storage URL). */
+  documentDownloadUrl: (docId: number) => `${BASE}/kyc/documents/${docId}/download`,
+};
+
+// ── Audit Log ─────────────────────────────────────────────────────────────────
+
+export interface AuditLog {
+  id: number;
+  action: string;
+  actorUserId: string;
+  actorUsername: string;
+  actorRole: string;
+  resourceType: string | null;
+  resourceId: string | null;
+  status: string | null;
+  remarks: string | null;
+  timestamp: string;
+  requestId: string | null;
+  httpRequestId: string | null;
+}
+
+export const audit = {
+  getAll:      (page = 0, size = 50) => request<AuditLog[]>('GET', `/audit?page=${page}&size=${size}`),
+  getByActor:  (userId: string)       => request<AuditLog[]>('GET', `/audit/actor/${encodeURIComponent(userId)}`),
+  getByResource: (type: string, id: string) =>
+    request<AuditLog[]>('GET', `/audit/resource/${encodeURIComponent(type)}/${encodeURIComponent(id)}`),
+};
+
+// ── CAPTCHA ───────────────────────────────────────────────────────────────────
+
+export interface CaptchaConfig {
+  enabled: boolean;
+  siteKey: string;
+}
+
+export const captcha = {
+  getConfig: () => fetch(`${BASE}/captcha/config`).then((r) => r.json() as Promise<CaptchaConfig>),
+  verify:    (token: string) => request<{ valid: boolean; message: string }>('POST', '/captcha/verify', { token }),
 };

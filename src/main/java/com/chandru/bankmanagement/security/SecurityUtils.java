@@ -26,13 +26,22 @@ public final class SecurityUtils {
 
     public static Actor actor(Jwt jwt) {
         List<String> roles = roles(jwt);
-        boolean admin   = roles.contains("ADMIN");
-        boolean maker   = admin || roles.contains("MAKER");
-        boolean checker = admin || roles.contains("CHECKER");
-        boolean staff   = maker || checker || roles.contains("EMPLOYEE");
+        boolean admin    = roles.contains("ADMIN");
+        boolean hasMaker = roles.contains("MAKER");
+        boolean hasChecker = roles.contains("CHECKER");
+        boolean hasEmployee = roles.contains("EMPLOYEE");
+
+        // admin subsumes all staff roles for permission checks
+        boolean maker    = admin || hasMaker;
+        boolean checker  = admin || hasChecker;
+        boolean employee = admin || hasEmployee;
+        boolean staff    = maker || checker || employee;
+
         String username = jwt.getClaimAsString("preferred_username");
-        return new Actor(jwt.getSubject(),
+        return new Actor(
+                jwt.getSubject(),
                 username != null ? username : jwt.getSubject(),
-                admin, staff, maker, checker, roles.contains("TPP"));
+                admin, staff, maker, checker, employee,
+                roles.contains("TPP"));
     }
 }

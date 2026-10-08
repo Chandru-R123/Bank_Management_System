@@ -164,7 +164,8 @@ export function openCashModal(
     }
     try {
       const fn = isDeposit ? accounts.deposit : accounts.withdraw;
-      const updated = await fn(a.accountId, amount, remarksEl.value.trim() || undefined);
+      const raw = await fn(a.accountId, amount, remarksEl.value.trim() || undefined);
+      const updated = raw as Account;
       m.body.innerHTML = receiptHtml({
         title: isDeposit ? 'Deposit successful' : 'Withdrawal successful',
         amount,
@@ -425,13 +426,13 @@ export function openTransferModal(
       const confirmBtn = footer.querySelector<HTMLButtonElement>('[data-confirm]')!;
       confirmBtn.addEventListener('click', () => withBusy(confirmBtn, async () => {
         try {
-          const tx: Transaction = await accounts.transfer({
+          const tx = await accounts.transfer({
             fromAccountId: src.accountId,
             toAccountId,
             toAccountNumber: toAccountId ? undefined : destNumber,
             amount,
             description: remarks || undefined,
-          });
+          }) as Transaction;
           m.setSubtitle('');
           m.body.innerHTML = receiptHtml({
             title: 'Transfer successful',

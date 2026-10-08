@@ -1,9 +1,15 @@
 import './style.css';
 import keycloak from './keycloak';
-import { customers, getDisplayName, getRoleLabel, hasRole, isAdmin, isStaff, isTpp } from './api';
+import {
+  customers, getDisplayName, getRoleLabel, hasRole,
+  isAdmin, isStaff, isTpp, isMaker, isChecker, canReviewKyc,
+} from './api';
 import { icon } from './icons';
 import type { IconName } from './icons';
 import { esc, initials, toast, todayLong, errorMessage } from './utils';
+
+// ── Page imports ──────────────────────────────────────────────────────────────
+
 import { renderDashboard }      from './pages/dashboard';
 import { renderCustomers }      from './pages/customers';
 import { renderAccounts }       from './pages/accounts';
@@ -15,6 +21,11 @@ import { renderBeneficiaries }  from './pages/beneficiaries';
 import { renderConsents }       from './pages/consents';
 import { renderTppPortal }      from './pages/tpp';
 import { renderStaff }          from './pages/staff';
+import { renderRequests }       from './pages/requests';
+import { renderApprovals }      from './pages/approvals';
+import { renderKyc }            from './pages/kyc';
+import { renderKycReview }      from './pages/kyc-review';
+import { renderAuditLog }       from './pages/audit';
 
 const app = document.getElementById('app')!;
 
@@ -27,74 +38,117 @@ app.innerHTML = `
     </div>
   </div>`;
 
-// ── Routes ────────────────────────────────────────────────────────────────────
+// ── Route definition ──────────────────────────────────────────────────────────
 
 interface Route {
   title: string;
   crumb: string;
   icon: IconName;
   render: (el: HTMLElement) => Promise<void>;
-  /** Only shown to (and routable by) ADMIN users. */
-  adminOnly?: boolean;
+  /** When truthy, only shown if the condition holds. */
+  when?: () => boolean;
 }
 
-const staffRoutes: Record<string, Route> = {
-  dashboard:    { title: 'Overview',     crumb: 'Branch performance at a glance', icon: 'dashboard', render: renderDashboard },
-  customers:    { title: 'Customers',    crumb: 'KYC records & relationships',     icon: 'users',     render: renderCustomers },
-  accounts:     { title: 'Accounts',     crumb: 'Open, service and close accounts', icon: 'bank',     render: renderAccounts },
-  transactions: { title: 'Transactions', crumb: 'Ledger of every movement',         icon: 'receipt',   render: renderTransactions },
-  beneficiaries:{ title: 'Beneficiaries', crumb: 'Saved payees of every customer',  icon: 'userPlus',  render: renderBeneficiaries },
-  consents:     { title: 'Consents',     crumb: 'Open Banking access requests',     icon: 'shield',    render: renderConsents },
-  staff:        { title: 'Staff',        crumb: 'Employee, maker & checker logins',  icon: 'key',       render: renderStaff, adminOnly: true },
+// ── ADMIN routes — full set ────────────────────────────────────────────────────
+const adminRoutes: Record<string, Route> = {
+  dashboard:   { title: 'Overview',       crumb: 'Branch performance at a glance',       icon: 'dashboard', render: renderDashboard },
+  customers:   { title: 'Customers',      crumb: 'KYC records & relationships',           icon: 'users',     render: renderCustomers },
+  accounts:    { title: 'Accounts',       crumb: 'Open, service and close accounts',      icon: 'bank',      render: renderAccounts },
+  transactions:{ title: 'Transactions',   crumb: 'Ledger of every movement',              icon: 'receipt',   render: renderTransactions },
+  requests:    { title: 'Requests',       crumb: 'Maker–Checker transaction requests',    icon: 'send',      render: renderRequests },
+  approvals:   { title: 'Approvals',      crumb: 'Pending Maker requests awaiting action',icon: 'checkCircle',render: renderApprovals },
+  'kyc-review':{ title: 'KYC Review',     crumb: 'Review customer identity documents',    icon: 'user',      render: renderKycReview },
+  beneficiaries:{ title: 'Beneficiaries', crumb: 'Saved payees of every customer',       icon: 'userPlus',  render: renderBeneficiaries },
+  consents:    { title: 'Consents',       crumb: 'Open Banking access requests',          icon: 'shield',    render: renderConsents },
+  audit:       { title: 'Audit Log',      crumb: 'Full system audit trail',              icon: 'activity',  render: renderAuditLog },
+  staff:       { title: 'Staff',          crumb: 'Employee, maker & checker logins',      icon: 'key',       render: renderStaff },
 };
 
+// ── EMPLOYEE routes — customers, accounts (read), KYC review ─────────────────
+const employeeRoutes: Record<string, Route> = {
+  dashboard:    { title: 'Overview',      crumb: 'Branch performance at a glance',        icon: 'dashboard', render: renderDashboard },
+  customers:    { title: 'Customers',     crumb: 'KYC records & relationships',            icon: 'users',     render: renderCustomers },
+  accounts:     { title: 'Accounts',      crumb: 'View accounts',                          icon: 'bank',      render: renderAccounts },
+  transactions: { title: 'Transactions',  crumb: 'Ledger of every movement',               icon: 'receipt',   render: renderTransactions },
+  'kyc-review': { title: 'KYC Review',    crumb: 'Review customer identity documents',     icon: 'user',      render: renderKycReview },
+  beneficiaries:{ title: 'Beneficiaries', crumb: 'Saved payees',                           icon: 'userPlus',  render: renderBeneficiaries },
+  consents:     { title: 'Consents',      crumb: 'Open Banking access requests',           icon: 'shield',    render: renderConsents },
+};
+
+// ── MAKER routes — create requests, view own requests ─────────────────────────
+const makerRoutes: Record<string, Route> = {
+  dashboard:    { title: 'Overview',      crumb: 'Branch performance at a glance',        icon: 'dashboard', render: renderDashboard },
+  customers:    { title: 'Customers',     crumb: 'Customer records',                       icon: 'users',     render: renderCustomers },
+  accounts:     { title: 'Accounts',      crumb: 'View accounts',                          icon: 'bank',      render: renderAccounts },
+  requests:     { title: 'My Requests',   crumb: 'My Maker–Checker requests',              icon: 'send',      render: renderRequests },
+  transactions: { title: 'Transactions',  crumb: 'Ledger',                                 icon: 'receipt',   render: renderTransactions },
+  beneficiaries:{ title: 'Beneficiaries', crumb: 'Saved payees',                           icon: 'userPlus',  render: renderBeneficiaries },
+};
+
+// ── CHECKER routes — pending approvals, history ───────────────────────────────
+const checkerRoutes: Record<string, Route> = {
+  dashboard:    { title: 'Overview',      crumb: 'Branch performance at a glance',        icon: 'dashboard', render: renderDashboard },
+  approvals:    { title: 'Approvals',     crumb: 'Pending Maker requests',                 icon: 'checkCircle',render: renderApprovals },
+  transactions: { title: 'Transactions',  crumb: 'Executed transactions',                  icon: 'receipt',   render: renderTransactions },
+  accounts:     { title: 'Accounts',      crumb: 'View accounts',                          icon: 'bank',      render: renderAccounts },
+  customers:    { title: 'Customers',     crumb: 'Customer records',                       icon: 'users',     render: renderCustomers },
+  audit:        { title: 'Audit Log',     crumb: 'System audit trail',                     icon: 'activity',  render: renderAuditLog },
+  beneficiaries:{ title: 'Beneficiaries', crumb: 'Saved payees',                           icon: 'userPlus',  render: renderBeneficiaries },
+  consents:     { title: 'Consents',      crumb: 'Open Banking access requests',           icon: 'shield',    render: renderConsents },
+};
+
+// ── CUSTOMER routes — own banking ─────────────────────────────────────────────
 const customerRoutes: Record<string, Route> = {
-  home:              { title: 'My Accounts', crumb: 'Balances & quick actions', icon: 'wallet',  render: renderMyAccounts },
-  'my-transactions': { title: 'Transactions', crumb: 'Your account activity',   icon: 'receipt', render: renderMyTransactions },
-  beneficiaries:     { title: 'Beneficiaries', crumb: 'People you pay',         icon: 'userPlus', render: renderBeneficiaries },
-  apps:              { title: 'Connected apps', crumb: 'Open Banking consents', icon: 'shield', render: renderConsents },
-  profile:           { title: 'Profile',      crumb: 'Contact details & security', icon: 'user', render: renderProfile },
+  home:              { title: 'My Accounts',    crumb: 'Balances & quick actions',         icon: 'wallet',   render: renderMyAccounts },
+  'my-transactions': { title: 'Transactions',   crumb: 'Your account activity',            icon: 'receipt',  render: renderMyTransactions },
+  beneficiaries:     { title: 'Beneficiaries',  crumb: 'People you pay',                   icon: 'userPlus', render: renderBeneficiaries },
+  apps:              { title: 'Connected apps', crumb: 'Open Banking consents',            icon: 'shield',   render: renderConsents },
+  kyc:               { title: 'KYC',            crumb: 'Identity verification',            icon: 'user',     render: renderKyc },
+  profile:           { title: 'Profile',        crumb: 'Contact details & security',       icon: 'user',     render: renderProfile },
 };
 
+// ── TPP routes ────────────────────────────────────────────────────────────────
 const tppRoutes: Record<string, Route> = {
   portal: { title: 'Open Banking', crumb: 'Consents & account information', icon: 'shield', render: renderTppPortal },
 };
 
+/** Resolve the correct route table for the current user. */
 function routes(): Record<string, Route> {
-  if (isStaff()) {
-    return Object.fromEntries(
-      Object.entries(staffRoutes).filter(([, r]) => !r.adminOnly || isAdmin()),
-    );
-  }
   if (isTpp()) return tppRoutes;
-  return customerRoutes;
+  if (!isStaff()) return customerRoutes;
+
+  // Staff: build composite based on roles
+  if (isAdmin()) return adminRoutes;
+
+  // Composite staff routes: merge by role priority
+  const combined: Record<string, Route> = { ...employeeRoutes };
+  if (isMaker() && !isChecker())   Object.assign(combined, makerRoutes);
+  if (isChecker() && !isMaker())   Object.assign(combined, checkerRoutes);
+  if (isMaker() && isChecker()) {
+    // Has both roles — show all staff routes except admin-only staff management
+    Object.assign(combined, makerRoutes, checkerRoutes);
+  }
+  if (canReviewKyc() && !combined['kyc-review']) {
+    combined['kyc-review'] = adminRoutes['kyc-review'];
+  }
+  return combined;
 }
 
 function defaultPage(): string {
-  if (isStaff()) return 'dashboard';
-  if (isTpp()) return 'portal';
-  return 'home';
+  if (isTpp())   return 'portal';
+  if (!isStaff()) return 'home';
+  if (isChecker() && !isMaker()) return 'approvals';
+  if (isMaker() && !isChecker()) return 'requests';
+  return 'dashboard';
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
-//
-//  keycloak.init() redirects to Keycloak login if the user has no session.
-//  After a successful login Keycloak redirects back here with a code that
-//  keycloak-js exchanges for tokens transparently (PKCE).
-//
-keycloak
-  .init({
-    onLoad:           'login-required',
-    checkLoginIframe: false,
-    pkceMethod:       'S256',
-  })
-  .then(async (authenticated) => {
-    if (!authenticated) {
-      keycloak.login();
-      return;
-    }
 
-    // Silent token refresh; if the session is gone, log out cleanly.
+keycloak
+  .init({ onLoad: 'login-required', checkLoginIframe: false, pkceMethod: 'S256' })
+  .then(async (authenticated) => {
+    if (!authenticated) { keycloak.login(); return; }
+
     setInterval(() => {
       keycloak.updateToken(60).catch(() => {
         console.warn('Token refresh failed — logging out');
@@ -102,13 +156,8 @@ keycloak
       });
     }, 30_000);
 
-    // Link this Keycloak login to a customer record (idempotent). Staff also
-    // inherit CUSTOMER through Keycloak's default roles — they must not be
-    // turned into customers, so only pure customers are synced.
     if (hasRole('CUSTOMER') && !isStaff() && !isTpp()) {
-      try {
-        await customers.sync();
-      } catch (err) {
+      try { await customers.sync(); } catch (err) {
         console.warn('Customer sync failed (non-fatal):', err);
       }
     }
@@ -136,8 +185,11 @@ keycloak
 function buildShell() {
   const name = getDisplayName();
   const nav = Object.entries(routes())
-    .map(([key, r]) => `<a href="#${key}" class="nav-link" data-route="${key}">${icon(r.icon, 18)}<span>${r.title}</span></a>`)
+    .map(([key, r]) =>
+      `<a href="#${key}" class="nav-link" data-route="${key}">${icon(r.icon, 18)}<span>${r.title}</span></a>`)
     .join('');
+
+  const brandSub = isTpp() ? 'Developer Portal' : isStaff() ? 'Branch Console' : 'Online Banking';
 
   app.innerHTML = `
     <div class="app-shell">
@@ -146,7 +198,7 @@ function buildShell() {
           <div class="brand-mark">${icon('bank', 20)}</div>
           <div>
             <div class="brand-name">State Bank</div>
-            <div class="brand-sub">${isStaff() ? 'Branch Console' : isTpp() ? 'Developer Portal' : 'Online Banking'}</div>
+            <div class="brand-sub">${esc(brandSub)}</div>
           </div>
         </div>
         <nav class="sidebar-nav">
@@ -199,7 +251,6 @@ async function route() {
   const key = window.location.hash.replace(/^#/, '');
   const table = routes();
 
-  // Unknown or not-allowed route → role's default page
   if (!table[key]) {
     window.location.replace(`#${defaultPage()}`);
     return;
@@ -221,7 +272,7 @@ async function route() {
   try {
     await r.render(content);
   } catch (err: unknown) {
-    if (seq !== renderSeq) return; // user already navigated away
+    if (seq !== renderSeq) return;
     console.error('Page render error', err);
     toast(errorMessage(err) || 'Failed to load page', 'error');
   }

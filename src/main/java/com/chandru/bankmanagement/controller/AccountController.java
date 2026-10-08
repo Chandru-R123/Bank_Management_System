@@ -3,12 +3,15 @@ package com.chandru.bankmanagement.controller;
 import com.chandru.bankmanagement.dto.AccountLookupResponse;
 import com.chandru.bankmanagement.dto.AccountRequest;
 import com.chandru.bankmanagement.dto.AccountResponse;
+import com.chandru.bankmanagement.dto.CreateTransactionRequestDto;
 import com.chandru.bankmanagement.dto.TransactionRequest;
+import com.chandru.bankmanagement.dto.TransactionRequestResponse;
 import com.chandru.bankmanagement.dto.TransactionResponse;
 import com.chandru.bankmanagement.dto.TransferRequest;
 import com.chandru.bankmanagement.security.Roles;
 import com.chandru.bankmanagement.security.SecurityUtils;
 import com.chandru.bankmanagement.service.AccountService;
+import com.chandru.bankmanagement.service.TransactionRequestService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -20,19 +23,28 @@ import java.util.List;
 
 /**
  * Roles:
- *   ADMIN    — everything: open, edit, freeze / unfreeze / close
- *   MAKER    — move money on any account
+ *   ADMIN    — everything: open, edit, freeze / unfreeze / close; direct deposit/withdraw
+ *   MAKER    — submit Maker–Checker requests (deposit/withdraw/transfer go to request queue)
  *   EMPLOYEE / CHECKER — view all accounts
- *   CUSTOMER — own accounts only
+ *   CUSTOMER — own accounts only; direct deposit/withdraw/transfer on own accounts
+ *
+ * Maker–Checker routing:
+ *   When a MAKER (not ADMIN) calls deposit/withdraw/transfer, the request is
+ *   routed to POST /api/transaction-requests internally — balance is NOT changed.
+ *   ADMIN calls these endpoints directly (existing behaviour preserved).
+ *   CUSTOMER calls these endpoints directly on own accounts (existing behaviour).
  */
 @RestController
 @RequestMapping("/api/accounts")
 public class AccountController {
 
-    private final AccountService accountService;
+    private final AccountService             accountService;
+    private final TransactionRequestService  requestService;
 
-    public AccountController(AccountService accountService) {
+    public AccountController(AccountService accountService,
+                             TransactionRequestService requestService) {
         this.accountService = accountService;
+        this.requestService = requestService;
     }
 
     // ── ADMIN: open account ────────────────────────────────────────────
@@ -50,7 +62,6 @@ public class AccountController {
     @PreAuthorize("hasRole('CUSTOMER')")
     @GetMapping("/my")
     public List<AccountResponse> getMyAccounts(@AuthenticationPrincipal Jwt jwt) {
-        // jwt.getSubject() == Keycloak user UUID ("sub" claim)
         return accountService.getAccountsForSub(jwt.getSubject());
     }
 
@@ -119,36 +130,62 @@ public class AccountController {
         return accountService.unfreeze(id, SecurityUtils.actor(jwt));
     }
 
-    // ── MAKER / CUSTOMER: deposit ─────────────────────────────────────────────
+    // ── deposit ────────────────────────────────────────────────────────
+    //   ADMIN   → direct execution (existing behaviour)
+    //   MAKER   → creates a PENDING_APPROVAL Maker–Checker request
+    //   CUSTOMER → direct execution on own account (existing behaviour)
 
     @PreAuthorize(Roles.TRANSACTORS)
     @PostMapping("/{id}/deposit")
-    public AccountResponse deposit(@PathVariable Long id,
-                                   @Valid @RequestBody TransactionRequest request,
-                                   @AuthenticationPrincipal Jwt jwt) {
-        // MAKER/ADMIN have no ownership restriction; CUSTOMER is scoped to own account
+    public Object deposit(@PathVariable Long id,
+                          @Valid @RequestBody TransactionRequest request,
+                          @AuthenticationPrincipal Jwt jwt) {
+        var actor = SecurityUtils.actor(jwt);
+        if (actor.isPureMaker()) {
+            // Route MAKER through Maker–Checker workflow
+            return requestService.create(new CreateTransactionRequestDto(
+                    "DEPOSIT", id, null, null,
+                    request.getAmount(), request.getDescription(), null), actor);
+        }
         return accountService.deposit(id, request.getAmount(),
-                request.getDescription(), SecurityUtils.actor(jwt));
+                request.getDescription(), actor);
     }
 
-    // ── MAKER / CUSTOMER: withdraw ────────────────────────────────────────────
+    // ── withdraw ───────────────────────────────────────────────────────
 
     @PreAuthorize(Roles.TRANSACTORS)
     @PostMapping("/{id}/withdraw")
-    public AccountResponse withdraw(@PathVariable Long id,
-                                    @Valid @RequestBody TransactionRequest request,
-                                    @AuthenticationPrincipal Jwt jwt) {
+    public Object withdraw(@PathVariable Long id,
+                           @Valid @RequestBody TransactionRequest request,
+                           @AuthenticationPrincipal Jwt jwt) {
+        var actor = SecurityUtils.actor(jwt);
+        if (actor.isPureMaker()) {
+            return requestService.create(new CreateTransactionRequestDto(
+                    "WITHDRAW", id, null, null,
+                    request.getAmount(), request.getDescription(), null), actor);
+        }
         return accountService.withdraw(id, request.getAmount(),
-                request.getDescription(), SecurityUtils.actor(jwt));
+                request.getDescription(), actor);
     }
 
-    // ── MAKER / CUSTOMER: transfer ────────────────────────────────────────────
+    // ── transfer ───────────────────────────────────────────────────────
 
     @PreAuthorize(Roles.TRANSACTORS)
     @PostMapping("/transfer")
     @ResponseStatus(HttpStatus.CREATED)
-    public TransactionResponse transfer(@Valid @RequestBody TransferRequest request,
-                                        @AuthenticationPrincipal Jwt jwt) {
-        return accountService.transferMoney(request, SecurityUtils.actor(jwt));
+    public Object transfer(@Valid @RequestBody TransferRequest request,
+                           @AuthenticationPrincipal Jwt jwt) {
+        var actor = SecurityUtils.actor(jwt);
+        if (actor.isPureMaker()) {
+            return requestService.create(new CreateTransactionRequestDto(
+                    "TRANSFER",
+                    request.getFromAccountId(),
+                    request.getToAccountId(),
+                    request.getToAccountNumber(),
+                    request.getAmount(),
+                    request.getDescription(),
+                    null), actor);
+        }
+        return accountService.transferMoney(request, actor);
     }
 }
