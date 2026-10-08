@@ -21,17 +21,12 @@ public final class Roles {
     public static final String CUSTOMER_MANAGERS = "hasAnyRole('ADMIN', 'EMPLOYEE')";
 
     /**
-     * Transactors — used for CUSTOMER direct operations (deposit/withdraw/transfer).
-     * MAKER is intentionally NOT included here: MAKER staff must use the
-     * Maker–Checker request flow (/api/transaction-requests).
+     * Direct money movement (deposit / withdraw / transfer): ADMIN on any
+     * account, CUSTOMER on their own. MAKER is intentionally NOT included —
+     * makers only initiate requests through /api/transaction-requests, which
+     * a CHECKER must approve.
      */
     public static final String CUSTOMER_TRANSACTORS = "hasAnyRole('ADMIN', 'CUSTOMER')";
-
-    /**
-     * Legacy constant — kept for AccountController staff deposit/withdraw
-     * which now routes MAKER through Maker–Checker.
-     */
-    public static final String TRANSACTORS = "hasAnyRole('ADMIN', 'MAKER', 'CUSTOMER')";
 
     /** Verification actions — approve/reject Maker requests, beneficiaries, consents. */
     public static final String CHECKERS = "hasAnyRole('ADMIN', 'CHECKER')";

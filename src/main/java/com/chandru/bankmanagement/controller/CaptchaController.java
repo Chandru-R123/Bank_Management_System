@@ -2,19 +2,19 @@ package com.chandru.bankmanagement.controller;
 
 import com.chandru.bankmanagement.service.CaptchaService;
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
 /**
- * Returns the CAPTCHA site key for the frontend and
- * provides a server-side verify endpoint.
+ * GET  /api/captcha/config  — public: { enabled, siteKey } for the browser widget
+ * POST /api/captcha/verify  — checks a token on its own (testing / Postman)
  *
- * POST /api/captcha/verify  — validates a CAPTCHA token (used by customer registration)
- * GET  /api/captcha/config  — returns { enabled, siteKey } to the frontend
+ * Protected actions (e.g. PUT /api/customers/me) do NOT rely on /verify: they
+ * send the token in the X-Captcha-Token header and check it themselves, so the
+ * CAPTCHA cannot be skipped by calling the action directly.
  *
- * The secret key is NEVER returned to the client.
+ * The secret key is never returned to the client.
  */
 @RestController
 @RequestMapping("/api/captcha")
@@ -22,41 +22,22 @@ public class CaptchaController {
 
     private final CaptchaService captchaService;
 
-    @org.springframework.beans.factory.annotation.Value("${captcha.enabled:false}")
-    private boolean captchaEnabled;
-
-    /**
-     * CAPTCHA_SITE_KEY is the public key shown to users in the browser widget.
-     * It is not a secret — it is safe to return it in a public endpoint.
-     */
-    @org.springframework.beans.factory.annotation.Value("${captcha.site-key:}")
-    private String siteKey;
-
     public CaptchaController(CaptchaService captchaService) {
         this.captchaService = captchaService;
     }
 
-    /** Frontend reads this on load to decide whether to show the CAPTCHA widget. */
+    /** The frontend reads this to decide whether to show the widget. */
     @GetMapping("/config")
     public Map<String, Object> config() {
         return Map.of(
-                "enabled", captchaEnabled,
-                "siteKey", siteKey != null ? siteKey : ""
-        );
+                "enabled", captchaService.isEnabled(),
+                "siteKey", captchaService.siteKey());
     }
 
-    /**
-     * Validates the CAPTCHA token submitted from a registration or sensitive form.
-     * Returns 200 OK on success, 400 Bad Request on failure.
-     */
     @PostMapping("/verify")
-    @ResponseStatus(HttpStatus.OK)
-    public Map<String, Object> verify(
-            @RequestBody Map<String, String> body,
-            HttpServletRequest req) {
-        String token    = body.get("token");
-        String remoteIp = req.getRemoteAddr();
-        captchaService.validate(token, remoteIp);
+    public Map<String, Object> verify(@RequestBody Map<String, String> body, HttpServletRequest req) {
+        String token = body.get("token");
+        captchaService.validate(token, req.getRemoteAddr());
         return Map.of("valid", true, "message", "CAPTCHA verified");
     }
 }

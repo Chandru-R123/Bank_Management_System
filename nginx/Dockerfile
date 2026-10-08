@@ -19,10 +19,6 @@ COPY bank-management-frontend/ .
 ARG VITE_KEYCLOAK_URL=http://localhost:8080/auth
 ENV VITE_KEYCLOAK_URL=${VITE_KEYCLOAK_URL}
 
-# CAPTCHA site key — public key only (never the secret key)
-ARG VITE_CAPTCHA_SITE_KEY=
-ENV VITE_CAPTCHA_SITE_KEY=${VITE_CAPTCHA_SITE_KEY}
-
 # API base URL
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}

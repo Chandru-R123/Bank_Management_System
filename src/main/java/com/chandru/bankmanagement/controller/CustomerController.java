@@ -6,8 +6,10 @@ import com.chandru.bankmanagement.dto.CustomerResponse;
 import com.chandru.bankmanagement.dto.ProfileUpdateRequest;
 import com.chandru.bankmanagement.security.Roles;
 import com.chandru.bankmanagement.security.SecurityUtils;
+import com.chandru.bankmanagement.service.CaptchaService;
 import com.chandru.bankmanagement.service.CustomerService;
 import com.chandru.bankmanagement.service.OnlineBankingService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.Page;
@@ -24,11 +26,14 @@ public class CustomerController {
 
     private final CustomerService      customerService;
     private final OnlineBankingService onlineBankingService;
+    private final CaptchaService       captchaService;
 
     public CustomerController(CustomerService customerService,
-                              OnlineBankingService onlineBankingService) {
+                              OnlineBankingService onlineBankingService,
+                              CaptchaService captchaService) {
         this.customerService      = customerService;
         this.onlineBankingService = onlineBankingService;
+        this.captchaService       = captchaService;
     }
 
     // ── STAFF: online-banking login for a branch customer ──────────────
@@ -75,12 +80,14 @@ public class CustomerController {
         return customerService.getMyProfile(jwt.getSubject());
     }
 
-    // ── CUSTOMER: update own contact details ───────────────────────────
+    // ── CUSTOMER: update own contact details (reCAPTCHA protected) ─────
 
     @PreAuthorize("hasRole('CUSTOMER')")
     @PutMapping("/me")
     public CustomerResponse updateMyProfile(@AuthenticationPrincipal Jwt jwt,
-                                            @Valid @RequestBody ProfileUpdateRequest request) {
+                                            @Valid @RequestBody ProfileUpdateRequest request,
+                                            HttpServletRequest http) {
+        captchaService.validate(http);   // X-Captcha-Token header; no-op when CAPTCHA is off
         return customerService.updateMyProfile(jwt.getSubject(), request);
     }
 

@@ -1,6 +1,7 @@
 package com.chandru.bankmanagement.service;
 
 import com.chandru.bankmanagement.exception.BusinessRuleException;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -8,92 +9,121 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.regex.Pattern;
 
 /**
- * CAPTCHA validation service.
+ * Google reCAPTCHA v2 ("I'm not a robot" checkbox) verification.
  *
- * Supports Google reCAPTCHA v2/v3 and hCaptcha (same verify API shape).
+ * Configuration (environment variables, e.g. in the project's .env file):
+ *   CAPTCHA_SITE_KEY     public site key — shown in the browser widget
+ *   CAPTCHA_SECRET_KEY   secret key — server side only, never sent to the browser
+ *   CAPTCHA_ENABLED      optional; true by default. CAPTCHA is active only when
+ *                        it is true AND both keys are set, so local development
+ *                        without keys keeps working.
  *
- * Configuration (all via environment variables — never hardcoded):
- *   CAPTCHA_ENABLED      true | false  (default: false — dev mode)
- *   CAPTCHA_SECRET_KEY   Your server-side secret key
- *   CAPTCHA_VERIFY_URL   (optional) Override default reCAPTCHA URL for hCaptcha etc.
- *   CAPTCHA_MIN_SCORE    (optional, v3 only) Minimum score 0.0–1.0 (default: 0.5)
+ * The same keys are pushed to Keycloak's registration page by
+ * {@link KeycloakCaptchaSync}.
  *
- * The CAPTCHA_SITE_KEY is a FRONTEND-only value and is NEVER read by this service.
- *
- * When CAPTCHA_ENABLED=false the validation is a no-op (development/test mode).
+ * Protected app requests send the widget token in the {@value #TOKEN_HEADER} header.
  */
 @Service
 public class CaptchaService {
 
     private static final Logger log = LoggerFactory.getLogger(CaptchaService.class);
 
-    private static final String DEFAULT_VERIFY_URL =
-            "https://www.google.com/recaptcha/api/siteverify";
+    public static final String TOKEN_HEADER = "X-Captcha-Token";
 
-    @Value("${captcha.enabled:false}")
-    private boolean enabled;
+    /** Google's reply is pretty-printed ("success": true), so match whitespace too. */
+    private static final Pattern SUCCESS = Pattern.compile("\"success\"\\s*:\\s*true");
+
+    @Value("${captcha.enabled:true}")
+    private boolean enabledFlag;
+
+    @Value("${captcha.site-key:}")
+    private String siteKey;
 
     @Value("${captcha.secret-key:}")
     private String secretKey;
 
-    @Value("${captcha.verify-url:" + DEFAULT_VERIFY_URL + "}")
+    @Value("${captcha.verify-url:https://www.google.com/recaptcha/api/siteverify}")
     private String verifyUrl;
-
-    @Value("${captcha.min-score:0.5}")
-    private double minScore;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
-    /**
-     * Validates the CAPTCHA token submitted from the client.
-     *
-     * @param token       The token value from the frontend widget.
-     * @param remoteIp    Client IP address (optional, sent to Google for scoring).
-     * @throws BusinessRuleException if CAPTCHA is enabled and validation fails.
-     */
-    public void validate(String token, String remoteIp) {
-        if (!enabled) {
-            log.debug("CAPTCHA validation skipped (CAPTCHA_ENABLED=false)");
-            return;
-        }
-
-        if (secretKey == null || secretKey.isBlank()) {
-            throw new IllegalStateException(
-                    "CAPTCHA is enabled but CAPTCHA_SECRET_KEY is not configured. "
-                    + "Set the environment variable or disable CAPTCHA with CAPTCHA_ENABLED=false.");
-        }
-
-        if (token == null || token.isBlank()) {
-            throw new BusinessRuleException("CAPTCHA verification is required");
-        }
-
-        try {
-            String result = callVerifyApi(token, remoteIp);
-            parseCaptchaResult(result);
-        } catch (BusinessRuleException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("CAPTCHA verification API call failed: {}", e.getMessage());
-            // If CAPTCHA API is unreachable, fail open in dev but fail closed in prod
-            throw new BusinessRuleException(
-                    "CAPTCHA verification could not be completed. Please try again.");
+    /** Logs whether CAPTCHA is active (called once at startup). */
+    void logMode() {
+        if (isEnabled()) {
+            log.info("reCAPTCHA v2 is ON (site key {}…)", siteKey.substring(0, Math.min(8, siteKey.length())));
+        } else if (enabledFlag && (hasText(siteKey) || hasText(secretKey))) {
+            log.warn("reCAPTCHA is OFF: set BOTH CAPTCHA_SITE_KEY and CAPTCHA_SECRET_KEY to turn it on");
+        } else {
+            log.info("reCAPTCHA is OFF (no keys configured or CAPTCHA_ENABLED=false)");
         }
     }
 
-    // ── Internal ──────────────────────────────────────────────────────────────
+    /** True when CAPTCHA is switched on and both keys are configured. */
+    public boolean isEnabled() {
+        return enabledFlag && hasText(siteKey) && hasText(secretKey);
+    }
+
+    /** Public site key for the browser widget ("" when CAPTCHA is off). */
+    public String siteKey() {
+        return isEnabled() ? siteKey.trim() : "";
+    }
+
+    String secretKey() {
+        return secretKey == null ? "" : secretKey.trim();
+    }
+
+    /** Validates the token sent in the {@value #TOKEN_HEADER} header of an app request. */
+    public void validate(HttpServletRequest request) {
+        validate(request.getHeader(TOKEN_HEADER), clientIp(request));
+    }
+
+    /**
+     * Validates a widget token with Google. No-op when CAPTCHA is off.
+     *
+     * @throws BusinessRuleException (400) when the token is missing, invalid or expired
+     */
+    public void validate(String token, String remoteIp) {
+        if (!isEnabled()) return;
+
+        if (token == null || token.isBlank()) {
+            throw new BusinessRuleException("Please tick \"I'm not a robot\" to continue");
+        }
+
+        String result;
+        try {
+            result = callVerifyApi(token.trim(), remoteIp);
+        } catch (IOException e) {
+            log.error("reCAPTCHA verification call failed: {}", e.getMessage());
+            throw new BusinessRuleException("CAPTCHA verification could not be completed. Please try again.");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BusinessRuleException("CAPTCHA verification could not be completed. Please try again.");
+        }
+
+        if (!SUCCESS.matcher(result).find()) {
+            // e.g. "timeout-or-duplicate" (token used twice / older than 2 minutes), "invalid-input-secret"
+            log.warn("reCAPTCHA rejected the token: {}", result.replaceAll("\\s+", " "));
+            throw new BusinessRuleException("CAPTCHA check failed or expired. Please tick \"I'm not a robot\" again.");
+        }
+    }
+
+    // ── internal ─────────────────────────────────────────────────────────
 
     private String callVerifyApi(String token, String remoteIp) throws IOException, InterruptedException {
-        String body = "secret=" + urlEncode(secretKey)
+        String body = "secret=" + urlEncode(secretKey())
                 + "&response=" + urlEncode(token)
-                + (remoteIp != null && !remoteIp.isBlank() ? "&remoteip=" + urlEncode(remoteIp) : "");
+                + (hasText(remoteIp) ? "&remoteip=" + urlEncode(remoteIp) : "");
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(verifyUrl))
@@ -102,57 +132,27 @@ public class CaptchaService {
                 .timeout(Duration.ofSeconds(5))
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request,
-                HttpResponse.BodyHandlers.ofString());
-
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) {
-            throw new IOException("CAPTCHA API returned HTTP " + response.statusCode());
+            throw new IOException("reCAPTCHA API returned HTTP " + response.statusCode());
         }
         return response.body();
     }
 
-    /**
-     * Minimal JSON parsing without pulling in Jackson just for two fields.
-     * Handles both reCAPTCHA v2 ({"success":true}) and
-     * reCAPTCHA v3 ({"success":true,"score":0.9}).
-     */
-    private void parseCaptchaResult(String json) {
-        boolean success = json.contains("\"success\":true");
-        if (!success) {
-            log.warn("CAPTCHA validation failed. Response: {}", json);
-            throw new BusinessRuleException(
-                    "CAPTCHA verification failed. Please complete the CAPTCHA and try again.");
-        }
-        // For reCAPTCHA v3: check score
-        if (json.contains("\"score\":")) {
-            double score = extractScore(json);
-            if (score < minScore) {
-                log.warn("CAPTCHA score {} below minimum {}", score, minScore);
-                throw new BusinessRuleException(
-                        "CAPTCHA score too low. Please try again or contact support.");
-            }
-        }
+    /** Browser IP as seen by NGINX (the backend itself only sees the gateway). */
+    private static String clientIp(HttpServletRequest request) {
+        String realIp = request.getHeader("X-Real-IP");
+        if (hasText(realIp)) return realIp.trim();
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (hasText(forwarded)) return forwarded.split(",")[0].trim();
+        return request.getRemoteAddr();
     }
 
-    private double extractScore(String json) {
-        try {
-            int idx = json.indexOf("\"score\":");
-            if (idx < 0) return 1.0;
-            String sub = json.substring(idx + 8).trim();
-            int end = sub.indexOf(',');
-            if (end < 0) end = sub.indexOf('}');
-            if (end < 0) return 1.0;
-            return Double.parseDouble(sub.substring(0, end).trim());
-        } catch (NumberFormatException e) {
-            return 1.0;
-        }
+    private static String urlEncode(String s) {
+        return URLEncoder.encode(s, StandardCharsets.UTF_8);
     }
 
-    private String urlEncode(String s) {
-        try {
-            return java.net.URLEncoder.encode(s, "UTF-8");
-        } catch (java.io.UnsupportedEncodingException e) {
-            return s;
-        }
+    private static boolean hasText(String s) {
+        return s != null && !s.isBlank();
     }
 }

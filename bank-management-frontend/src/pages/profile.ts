@@ -1,5 +1,5 @@
 import keycloak from '../keycloak';
-import { customers, getUsername, captcha } from '../api';
+import { customers, getUsername } from '../api';
 import type { Customer } from '../api';
 import { icon } from '../icons';
 import type { IconName } from '../icons';
@@ -9,9 +9,6 @@ import type { CaptchaWidget } from '../components/captcha';
 
 const PHONE_RE = /^\+?[0-9][0-9 -]{8,14}$/;
 
-// Site key baked in at Vite build time from VITE_CAPTCHA_SITE_KEY
-const SITE_KEY: string = import.meta.env.VITE_CAPTCHA_SITE_KEY ?? '';
-const CAPTCHA_ON = SITE_KEY.length > 0;
 
 export async function renderProfile(container: HTMLElement) {
   container.innerHTML = `
@@ -137,14 +134,14 @@ export async function renderProfile(container: HTMLElement) {
           <div class="field-error" data-error></div>
         </div>
 
-        ${CAPTCHA_ON ? `
-        <div class="field" data-field="captcha">
+        <!-- Shown only when reCAPTCHA is switched on in the backend -->
+        <div class="field" data-field="captcha" id="pf-captcha-field" style="display:none">
           <label class="field-label">
             ${icon('shield', 14)} Human verification<span class="req">*</span>
           </label>
           <div id="pf-captcha-wrap" style="margin-top:6px"></div>
-          <div class="field-error" id="pf-captcha-err" style="margin-top:4px"></div>
-        </div>` : ''}
+          <div class="field-error" data-error></div>
+        </div>
 
         <div class="flex gap-2" style="justify-content:flex-end">
           <button type="button" class="btn btn-secondary" id="pf-cancel">Cancel</button>
@@ -157,17 +154,24 @@ export async function renderProfile(container: HTMLElement) {
     (document.getElementById('edit-btn') as HTMLButtonElement).disabled = true;
     document.getElementById('pf-phone')!.focus();
 
-    let formWidget: CaptchaWidget | null = null;
-    if (CAPTCHA_ON) {
-      formWidget = mountCaptcha(document.getElementById('pf-captcha-wrap')!, SITE_KEY);
-    }
-
     const setErr = (field: string, msg: string | null) => {
       const f = body.querySelector<HTMLElement>(`[data-field="${field}"]`);
       if (!f) return;
       f.classList.toggle('has-error', !!msg);
       f.querySelector<HTMLElement>('[data-error]')!.textContent = msg ?? '';
     };
+
+    let formWidget: CaptchaWidget | null = null;
+    const captchaField = document.getElementById('pf-captcha-field')!;
+    mountCaptcha(document.getElementById('pf-captcha-wrap')!)
+      .then((w) => {
+        formWidget = w;
+        captchaField.style.display = w ? '' : 'none';
+      })
+      .catch((err) => {
+        captchaField.style.display = '';
+        setErr('captcha', errorMessage(err));
+      });
 
     document.getElementById('pf-cancel')!.addEventListener('click', () => {
       formWidget?.destroy();
@@ -191,27 +195,15 @@ export async function renderProfile(container: HTMLElement) {
         } else { setErr('address', null); }
         if (!valid) return;
 
-        // Silent CAPTCHA check — only blocks if enabled and not completed
-        if (CAPTCHA_ON && formWidget) {
-          if (!formWidget.isDone()) {
-            const errEl = document.getElementById('pf-captcha-err');
-            if (errEl) errEl.textContent = 'Please complete the CAPTCHA';
-            toast('Please complete the CAPTCHA first', 'error');
-            return;
-          }
-          try {
-            await captcha.verify(formWidget.getToken());
-          } catch (err) {
-            formWidget.reset();
-            const errEl = document.getElementById('pf-captcha-err');
-            if (errEl) errEl.textContent = 'CAPTCHA failed — please try again';
-            toast(errorMessage(err), 'error');
-            return;
-          }
+        // The token is checked by the backend together with the update itself
+        if (formWidget && !formWidget.isDone()) {
+          setErr('captcha', 'Please tick "I\'m not a robot"');
+          return;
         }
+        setErr('captcha', null);
 
         try {
-          const updated = await customers.updateMe({ phone, address });
+          const updated = await customers.updateMe({ phone, address }, formWidget?.getToken());
           formWidget?.destroy();
           toast('Profile updated', 'success');
           render(updated);

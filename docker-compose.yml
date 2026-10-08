@@ -112,8 +112,10 @@ services:
       DIGILOCKER_CLIENT_ID: ${DIGILOCKER_CLIENT_ID:-}
       DIGILOCKER_CLIENT_SECRET: ${DIGILOCKER_CLIENT_SECRET:-}
       DIGILOCKER_REDIRECT_URI: ${DIGILOCKER_REDIRECT_URI:-}
-      # ── CAPTCHA ──────────────────────────────────────────────────────────────
-      CAPTCHA_ENABLED: ${CAPTCHA_ENABLED:-false}
+      # ── CAPTCHA (Google reCAPTCHA v2) — keys come from the .env file ─────────
+      # ON when both keys are set; the frontend and Keycloak get the site key
+      # from the backend at runtime, so no rebuild is needed after changing keys
+      CAPTCHA_ENABLED: ${CAPTCHA_ENABLED:-true}
       CAPTCHA_SITE_KEY: ${CAPTCHA_SITE_KEY:-}
       CAPTCHA_SECRET_KEY: ${CAPTCHA_SECRET_KEY:-}
       # ── Seed data ────────────────────────────────────────────────────────────
@@ -137,8 +139,6 @@ services:
       dockerfile: nginx/Dockerfile
       args:
         VITE_KEYCLOAK_URL: http://localhost:8080/auth
-        # Pass the public site key into the React build — never the secret key
-        VITE_CAPTCHA_SITE_KEY: ${CAPTCHA_SITE_KEY:-}
     container_name: bank-nginx
     ports:
       - "8080:8080"

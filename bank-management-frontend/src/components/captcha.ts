@@ -1,13 +1,16 @@
 /**
- * reCAPTCHA v2 widget helper.
+ * Google reCAPTCHA v2 ("I'm not a robot" checkbox).
  *
- * Site key comes from VITE_CAPTCHA_SITE_KEY (baked in at build time).
- * Enabled/disabled state is confirmed from the backend at runtime.
- * The secret key is NEVER here — it stays server-side only.
+ * The site key comes from the backend at runtime (GET /api/captcha/config),
+ * which reads CAPTCHA_SITE_KEY from the .env file — no frontend rebuild is
+ * needed when the keys change. The secret key never reaches the browser.
+ *
+ * Usage:
+ *   const widget = await mountCaptcha(el);        // null when CAPTCHA is off
+ *   await api.call(data, widget?.getToken());      // sent as X-Captcha-Token
  */
-
-// Site key baked in by Vite at build time from VITE_CAPTCHA_SITE_KEY env var
-const BAKED_SITE_KEY: string = import.meta.env.VITE_CAPTCHA_SITE_KEY ?? '';
+import { captcha } from '../api';
+import type { CaptchaConfig } from '../api';
 
 export interface CaptchaWidget {
   getToken: () => string;
@@ -16,87 +19,70 @@ export interface CaptchaWidget {
   destroy: () => void;
 }
 
-let _scriptInjected = false;
-let _widgetSeq = 0;
+interface GRecaptcha {
+  render(el: HTMLElement, opts: { sitekey: string; theme?: string; callback?: () => void }): number;
+  getResponse(id?: number): string;
+  reset(id?: number): void;
+}
 
-function injectScript() {
-  if (_scriptInjected || document.getElementById('recaptcha-script')) {
-    _scriptInjected = true;
-    return;
-  }
-  const s = document.createElement('script');
-  s.id = 'recaptcha-script';
-  s.src = 'https://www.google.com/recaptcha/api.js?render=explicit&onload=_grecaptchaReady';
-  s.async = true;
-  s.defer = true;
-  document.head.appendChild(s);
-  _scriptInjected = true;
+type RecaptchaWindow = Window & { grecaptcha?: GRecaptcha; __onRecaptchaLoad?: () => void };
+
+let configPromise: Promise<CaptchaConfig> | null = null;
+let scriptPromise: Promise<GRecaptcha> | null = null;
+
+/** CAPTCHA settings from the backend (cached; "off" if the call fails). */
+export function captchaConfig(): Promise<CaptchaConfig> {
+  configPromise ??= captcha.getConfig()
+    .then((c) => ({ enabled: !!c.enabled && !!c.siteKey, siteKey: c.siteKey ?? '' }))
+    .catch(() => {
+      configPromise = null;   // try again next time
+      return { enabled: false, siteKey: '' };
+    });
+  return configPromise;
+}
+
+function loadScript(): Promise<GRecaptcha> {
+  const win = window as RecaptchaWindow;
+  scriptPromise ??= new Promise<GRecaptcha>((resolve, reject) => {
+    if (win.grecaptcha?.render) { resolve(win.grecaptcha); return; }
+    win.__onRecaptchaLoad = () => resolve(win.grecaptcha!);
+    const s = document.createElement('script');
+    s.src = 'https://www.google.com/recaptcha/api.js?render=explicit&onload=__onRecaptchaLoad';
+    s.async = true;
+    s.defer = true;
+    s.onerror = () => {
+      scriptPromise = null;
+      reject(new Error('Could not load Google reCAPTCHA. Check your internet connection.'));
+    };
+    document.head.appendChild(s);
+  });
+  return scriptPromise;
 }
 
 /**
- * Mount a reCAPTCHA v2 widget.
- * If siteKey is empty, renders nothing and always returns empty token.
+ * Renders the checkbox into `container`.
+ * Resolves to null when CAPTCHA is switched off on the server.
  */
-export function mountCaptcha(container: HTMLElement, siteKey?: string): CaptchaWidget {
-  const key = siteKey ?? BAKED_SITE_KEY;
-
-  if (!key) {
+export async function mountCaptcha(container: HTMLElement): Promise<CaptchaWidget | null> {
+  const cfg = await captchaConfig();
+  if (!cfg.enabled) {
     container.innerHTML = '';
-    return { getToken: () => '', isDone: () => true, reset: () => {}, destroy: () => {} };
+    return null;
   }
 
-  injectScript();
+  const g = await loadScript();
+  container.innerHTML = '<div></div>';
+  const target = container.firstElementChild as HTMLElement;
+  const widgetId = g.render(target, {
+    sitekey: cfg.siteKey,
+    theme: document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
+  });
 
-  const id = `rc-widget-${++_widgetSeq}`;
-  container.innerHTML = `<div id="${id}"></div>`;
-
-  let widgetId: number | null = null;
-  let rendered = false;
-
-  const render = () => {
-    if (rendered) return;
-    const win = window as unknown as {
-      grecaptcha?: { render(el: string, opts: object): number };
-      _grecaptchaReady?: () => void;
-    };
-    if (win.grecaptcha?.render) {
-      try {
-        widgetId = win.grecaptcha.render(id, { sitekey: key, theme: 'light' });
-        rendered = true;
-      } catch {
-        // already rendered (e.g. HMR)
-        rendered = true;
-      }
-    } else {
-      setTimeout(render, 300);
-    }
-  };
-
-  // Hook onto the onload callback if not yet fired, else render immediately
-  const win = window as unknown as { _grecaptchaReady?: () => void; grecaptcha?: object };
-  if (win.grecaptcha) {
-    setTimeout(render, 50);
-  } else {
-    const prev = win._grecaptchaReady;
-    win._grecaptchaReady = () => {
-      prev?.();
-      render();
-    };
-    setTimeout(render, 1000); // fallback if callback missed
-  }
-
-  const getToken = () => {
-    const w = window as unknown as { grecaptcha?: { getResponse(id?: number): string } };
-    return w.grecaptcha?.getResponse(widgetId ?? undefined) ?? '';
-  };
-
+  const getToken = () => g.getResponse(widgetId) ?? '';
   return {
     getToken,
     isDone: () => getToken().length > 0,
-    reset: () => {
-      const w = window as unknown as { grecaptcha?: { reset(id?: number): void } };
-      w.grecaptcha?.reset(widgetId ?? undefined);
-    },
-    destroy: () => { container.innerHTML = ''; rendered = false; },
+    reset: () => g.reset(widgetId),
+    destroy: () => { container.innerHTML = ''; },
   };
 }

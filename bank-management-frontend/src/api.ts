@@ -124,10 +124,15 @@ export function isChecker(): boolean {
   return hasRole('ADMIN') || hasRole('CHECKER');
 }
 
-/** May move money directly (ADMIN or CUSTOMER on own account).
- *  @deprecated Use isMaker()/isPureMaker() for staff logic; kept for customer account page */
+/** May move money directly: ADMIN, or a CUSTOMER on their own accounts.
+ *  MAKER staff never move money directly — they raise a request for a Checker (see canRaiseRequests). */
 export function canTransact(): boolean {
-  return hasRole('ADMIN') || hasRole('MAKER') || hasRole('CUSTOMER');
+  return hasRole('ADMIN') || hasRole('CUSTOMER');
+}
+
+/** Staff who initiate deposits / withdrawals / transfers as Maker–Checker requests. */
+export function canRaiseRequests(): boolean {
+  return hasRole('MAKER') && !canTransact();
 }
 
 /** ADMIN or EMPLOYEE — customer management, KYC review. */
@@ -197,7 +202,9 @@ export interface ProfileUpdate {
 export const customers = {
   getAll:    ()                               => request<Customer[]>('GET',    '/customers'),
   getMe:     ()                               => request<Customer>  ('GET',    '/customers/me'),
-  updateMe:  (data: ProfileUpdate)            => request<Customer>  ('PUT',    '/customers/me', data),
+  /** captchaToken: reCAPTCHA v2 response, required by the backend when CAPTCHA is on. */
+  updateMe:  (data: ProfileUpdate, captchaToken?: string) =>
+    request<Customer>('PUT', '/customers/me', data, captchaToken ? { 'X-Captcha-Token': captchaToken } : {}),
   getById:   (id: number)                     => request<Customer>  ('GET',    `/customers/${id}`),
   create:    (data: CustomerRequest)          => request<Customer>  ('POST',   '/customers', data),
   update:    (id: number, d: CustomerRequest) => request<Customer>  ('PUT',    `/customers/${id}`, d),

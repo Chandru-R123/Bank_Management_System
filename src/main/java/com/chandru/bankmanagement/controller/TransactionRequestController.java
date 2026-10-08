@@ -75,7 +75,7 @@ public class TransactionRequestController {
 
     // ── ANY MAKER/CHECKER/ADMIN: single request ───────────────────────────────
 
-    @PreAuthorize(Roles.TRANSACTORS)   // MAKER, ADMIN — CHECKER covered by CHECKERS already
+    @PreAuthorize("hasAnyRole('ADMIN', 'MAKER', 'CHECKER')")   // makers see only their own (checked in the service)
     @GetMapping("/{id}")
     public TransactionRequestResponse getById(@PathVariable Long id,
                                               @AuthenticationPrincipal Jwt jwt) {

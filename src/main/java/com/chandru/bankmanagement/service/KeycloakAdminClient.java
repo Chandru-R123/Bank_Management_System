@@ -223,6 +223,49 @@ public class KeycloakAdminClient {
         }
     }
 
+    // ── realm & authentication flows (reCAPTCHA on the registration page) ──
+
+    public Map<String, Object> getRealm(String token) {
+        return call(() -> get(token, uri("").build().toUri(), MAP), "read the realm");
+    }
+
+    /** Partial realm update: only the given top-level fields change. */
+    public void updateRealm(String token, Map<String, Object> fields) {
+        call(() -> rest.exchange(uri("").build().toUri(), HttpMethod.PUT,
+                new HttpEntity<>(fields, json(token)), Void.class), "update the realm");
+    }
+
+    /** All executions of a flow, nested sub-flow executions included. */
+    public List<Map<String, Object>> flowExecutions(String token, String flowAlias) {
+        URI uri = uri("").pathSegment("authentication", "flows", flowAlias, "executions")
+                .build().encode().toUri();
+        return call(() -> get(token, uri, LIST_OF_MAPS), "read the " + flowAlias + " flow");
+    }
+
+    /** Changes an execution's requirement (send back the item from {@link #flowExecutions}). */
+    public void updateFlowExecution(String token, String flowAlias, Map<String, Object> execution) {
+        URI uri = uri("").pathSegment("authentication", "flows", flowAlias, "executions")
+                .build().encode().toUri();
+        call(() -> rest.exchange(uri, HttpMethod.PUT,
+                new HttpEntity<>(execution, json(token)), Void.class), "update the " + flowAlias + " flow");
+    }
+
+    public Map<String, Object> getAuthenticatorConfig(String token, String configId) {
+        return call(() -> get(token, uri("/authentication/config/" + configId).build().toUri(), MAP),
+                "read an authenticator config");
+    }
+
+    public void updateAuthenticatorConfig(String token, String configId, Map<String, Object> config) {
+        call(() -> rest.exchange(uri("/authentication/config/" + configId).build().toUri(), HttpMethod.PUT,
+                new HttpEntity<>(config, json(token)), Void.class), "update an authenticator config");
+    }
+
+    /** Attaches a new config ({alias, config}) to an execution. */
+    public void createExecutionConfig(String token, String executionId, Map<String, Object> config) {
+        call(() -> rest.exchange(uri("/authentication/executions/" + executionId + "/config").build().toUri(),
+                HttpMethod.POST, new HttpEntity<>(config, json(token)), Void.class), "create an authenticator config");
+    }
+
     // ── helpers ────────────────────────────────────────────────────────
 
     private Optional<Map<String, Object>> firstExact(String token, String field, String value) {

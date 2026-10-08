@@ -1,4 +1,4 @@
-import { accounts, customers, transactions, isAdmin, canTransact } from '../api';
+import { accounts, customers, transactions, isAdmin, canTransact, canRaiseRequests } from '../api';
 import type { Account, AccountRequest, Customer } from '../api';
 import { icon } from '../icons';
 import {
@@ -21,6 +21,7 @@ export async function renderAccounts(container: HTMLElement) {
         <div class="page-actions">
           <button class="btn btn-secondary" id="acc-export" disabled>${icon('download', 16)} Export</button>
           ${canTransact() ? `<button class="btn btn-secondary" id="acc-transfer">${icon('transfer', 16)} Transfer</button>` : ''}
+          ${canRaiseRequests() ? `<a class="btn btn-primary" href="#requests">${icon('send', 16)} New request</a>` : ''}
           ${isAdmin() ? `<button class="btn btn-primary" id="acc-add">${icon('plus', 16)} Open account</button>` : ''}
         </div>
       </div>
@@ -124,7 +125,7 @@ export async function renderAccounts(container: HTMLElement) {
       return;
     }
 
-    const maker = canTransact();
+    const direct = canTransact();
     content.innerHTML = `
       <div class="table-wrap">
         <table class="table">
@@ -145,7 +146,7 @@ export async function renderAccounts(container: HTMLElement) {
                 <td class="num fw-600">${formatCurrency(a.balance)}</td>
                 <td class="actions">
                   <button class="btn-icon" data-act="statement" title="Statement">${icon('file', 16)}</button>
-                  ${maker ? `
+                  ${direct ? `
                   <button class="btn-icon" data-act="deposit" title="Deposit" ${canCredit(a) ? '' : 'disabled'}>${icon('arrowIn', 16)}</button>
                   <button class="btn-icon" data-act="withdraw" title="Withdraw" ${canDebit(a) ? '' : 'disabled'}>${icon('arrowOut', 16)}</button>` : ''}
                   <button class="btn-icon" data-act="more" title="More">${icon('menu', 16)}</button>
@@ -267,12 +268,16 @@ function openAccountDrawer(a: Account, all: Account[], onChange: () => void) {
       </div>
 
       <div class="action-grid mt-4">
-        <button class="action-tile" data-a="deposit" ${canCredit(a) && canTransact() ? '' : 'disabled'}>${icon('arrowIn', 18)}Deposit</button>
-        <button class="action-tile" data-a="withdraw" ${canDebit(a) && canTransact() ? '' : 'disabled'}>${icon('arrowOut', 18)}Withdraw</button>
-        <button class="action-tile" data-a="transfer" ${canDebit(a) && canTransact() ? '' : 'disabled'}>${icon('transfer', 18)}Transfer</button>
+        ${canTransact() ? `
+        <button class="action-tile" data-a="deposit" ${canCredit(a) ? '' : 'disabled'}>${icon('arrowIn', 18)}Deposit</button>
+        <button class="action-tile" data-a="withdraw" ${canDebit(a) ? '' : 'disabled'}>${icon('arrowOut', 18)}Withdraw</button>
+        <button class="action-tile" data-a="transfer" ${canDebit(a) ? '' : 'disabled'}>${icon('transfer', 18)}Transfer</button>` : ''}
+        ${canRaiseRequests() ? `<button class="action-tile" data-a="request" ${a.status === 'CLOSED' ? 'disabled' : ''}>${icon('send', 18)}New request</button>` : ''}
         <button class="action-tile" data-a="statement">${icon('file', 18)}Statement</button>
       </div>
-      ${canTransact() ? '' : `<p class="text-sm text-muted mt-2">Money movements need the MAKER role.</p>`}
+      ${canTransact() ? '' : canRaiseRequests()
+        ? `<p class="text-sm text-muted mt-2">Deposits, withdrawals and transfers are raised as requests. They run only after a Checker approves them.</p>`
+        : `<p class="text-sm text-muted mt-2">Money movements are initiated by a Maker and approved by a Checker.</p>`}
 
       ${a.status === 'FROZEN' ? `<div class="callout callout-info mt-4">${icon('snowflake', 16)}<div>This account is frozen. All debits and credits are blocked.</div></div>` : ''}
       ${a.status === 'CLOSED' ? `<div class="callout callout-warn mt-4">${icon('info', 16)}<div>This account is closed. History is retained for records.</div></div>` : ''}
@@ -308,6 +313,7 @@ function openAccountDrawer(a: Account, all: Account[], onChange: () => void) {
         case 'withdraw':  openCashModal('withdraw', [a], a.accountId, done, { withOwner: true }); break;
         case 'transfer':  openTransferModal(all, a.accountId, done, { withOwner: true }); break;
         case 'statement': openStatement(a, { showPerformedBy: true }); break;
+        case 'request':   m.close(); window.location.hash = 'requests'; break;
         case 'edit':      m.close(); openAccountForm(a, onChange); break;
         case 'freeze':    void freeze(a, done); break;
         case 'unfreeze':  void unfreeze(a, done); break;

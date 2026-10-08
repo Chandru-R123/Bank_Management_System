@@ -27,7 +27,7 @@ Browser
 Spring Boot ──▶ PostgreSQL 16 (bankdb)
 Spring Boot ──▶ Keycloak (Admin REST API — staff management)
 Spring Boot ──▶ DigiLocker API (when KYC_PROVIDER=DIGILOCKER)
-Spring Boot ──▶ reCAPTCHA/hCaptcha (when CAPTCHA_ENABLED=true)
+Spring Boot ──▶ Google reCAPTCHA v2 (when CAPTCHA_SITE_KEY + CAPTCHA_SECRET_KEY are set)
 ```
 
 **Only port 8080 is exposed to the host.** All internal service-to-service communication is over the `bank-network` Docker bridge.
@@ -74,7 +74,7 @@ Demo credentials — all users have been pre-configured in Keycloak:
 |----------|-------------|
 | **ADMIN** | Full system access. Staff management, customer management, account lifecycle, freeze/unfreeze/close, KYC review. Direct deposit/withdraw/transfer without Maker-Checker queue. |
 | **EMPLOYEE** | Customer management, KYC review (approve/reject). View-only on accounts/transactions. Cannot approve Maker requests. |
-| **MAKER** | Creates financial transaction requests (DEPOSIT / WITHDRAW / TRANSFER) which go into a pending queue. Cannot approve own requests. |
+| **MAKER** | Initiates financial transaction requests (DEPOSIT / WITHDRAW / TRANSFER) from the **Requests** page; they run only after a Checker approves them. Has no direct Deposit / Withdraw / Transfer buttons and gets 403 on the direct endpoints. Cannot approve own requests. |
 | **CHECKER** | Approves or rejects pending Maker requests. Cannot approve requests they created. Cannot self-approve. |
 | **CUSTOMER** | Own accounts, direct deposit/withdraw/transfer (with limits). Beneficiaries, Open Banking consents, KYC, profile. |
 | **TPP** | Open Banking only — consent-gated read access to customer accounts/transactions. No KYC, no financial operations. |
@@ -171,9 +171,9 @@ PUT    /accounts/{id}               ADMIN — update type/owner
 POST   /accounts/{id}/close         ADMIN
 POST   /accounts/{id}/freeze        ADMIN
 POST   /accounts/{id}/unfreeze      ADMIN
-POST   /accounts/{id}/deposit       CUSTOMER (direct) | MAKER (→ request queue) | ADMIN (direct)
-POST   /accounts/{id}/withdraw      CUSTOMER (direct) | MAKER (→ request queue) | ADMIN (direct)
-POST   /accounts/transfer           CUSTOMER (direct) | MAKER (→ request queue) | ADMIN (direct)
+POST   /accounts/{id}/deposit       CUSTOMER (own accounts) | ADMIN — makers use /transaction-requests
+POST   /accounts/{id}/withdraw      CUSTOMER (own accounts) | ADMIN — makers use /transaction-requests
+POST   /accounts/transfer           CUSTOMER (own accounts) | ADMIN — makers use /transaction-requests
 ```
 
 ### Maker–Checker Requests
@@ -233,7 +233,7 @@ POST   /customers/{id}/online-banking      ADMIN/EMPLOYEE — enable Keycloak lo
 ### CAPTCHA
 ```
 GET    /captcha/config                     Public — returns { enabled, siteKey }
-POST   /captcha/verify                     Authenticated — validates token
+POST   /captcha/verify                     Authenticated — validates a token on its own (testing)
 ```
 
 ---
@@ -271,17 +271,23 @@ Development/testing stub only. Auto-verifies without documents. Clearly labelled
 
 ---
 
-## CAPTCHA
+## CAPTCHA (Google reCAPTCHA v2)
 
-Supports Google reCAPTCHA v2/v3 and hCaptcha.
+1. Create keys at https://www.google.com/recaptcha/admin: type **reCAPTCHA v2 → "I'm not a robot" Checkbox**, domain `localhost` (plus your real domain).
+2. Put them in a `.env` file next to `docker-compose.yml` (`.env` is git-ignored, so the keys are never committed):
+   ```
+   CAPTCHA_SITE_KEY=<your-site-key>
+   CAPTCHA_SECRET_KEY=<your-secret-key>
+   ```
+3. `docker compose up -d --build backend nginx`
 
-```
-CAPTCHA_ENABLED=true
-CAPTCHA_SITE_KEY=<your-public-key>    # Frontend only
-CAPTCHA_SECRET_KEY=<your-secret-key>  # NEVER committed
-```
+CAPTCHA is **on when both keys are set** (`CAPTCHA_ENABLED=false` switches it off). Without keys everything works without CAPTCHA.
 
-When `CAPTCHA_ENABLED=false` (default), validation is skipped — safe for development and testing.
+Where it is used:
+- **Keycloak register page.** At every start the backend (`KeycloakCaptchaSync`) writes the keys into the realm's registration flow, sets the reCAPTCHA step to REQUIRED, and allows Google's iframe in Keycloak's Content-Security-Policy. This works on an existing Keycloak volume too, and no keys are kept in the realm file. Check the backend log for `reCAPTCHA sync: registration page CAPTCHA is ON`.
+- **Customer profile update.** The token is sent in the `X-Captcha-Token` header of `PUT /api/customers/me` and checked by the backend together with the update, so it cannot be bypassed.
+
+The browser gets the site key from `GET /api/captcha/config` at runtime, so changing keys needs only a backend restart. The secret key never leaves the backend.
 
 ---
 
@@ -342,10 +348,9 @@ Schema is managed by `spring.jpa.hibernate.ddl-auto=update` — Hibernate safely
 | `DIGILOCKER_CLIENT_ID` | — | DigiLocker OAuth client id |
 | `DIGILOCKER_CLIENT_SECRET` | — | **Secret** — never commit |
 | `DIGILOCKER_REDIRECT_URI` | — | DigiLocker OAuth callback URL |
-| `CAPTCHA_ENABLED` | `false` | Enable CAPTCHA validation |
-| `CAPTCHA_SITE_KEY` | — | Public key (frontend widget) |
+| `CAPTCHA_ENABLED` | `true` | CAPTCHA is on when this is true **and** both keys are set |
+| `CAPTCHA_SITE_KEY` | — | reCAPTCHA v2 site key (public, served to the browser at runtime) |
 | `CAPTCHA_SECRET_KEY` | — | **Secret** — never commit |
-| `CAPTCHA_MIN_SCORE` | `0.5` | reCAPTCHA v3 minimum score |
 | `BANK_SAVINGS_MIN_BALANCE` | `1000` | Savings account minimum balance (₹) |
 | `BANK_MAX_TXN_AMOUNT` | `1000000` | Customer max single transaction (₹) |
 | `BANK_DAILY_DEBIT_LIMIT` | `200000` | Customer daily debit limit per account (₹) |
@@ -419,7 +424,7 @@ Import `postman/State-Bank.postman_collection.json` into Postman.
 
 1. **DigiLocker** integration is structurally complete (OAuth2 URL construction, callback handler) but requires official API partner credentials from the Government of India. The TODO markers in `DigiLockerKycVerificationService.java` must be completed with the bank's issued credentials.
 
-2. **CAPTCHA** requires registration with Google reCAPTCHA or hCaptcha to obtain keys. `CAPTCHA_ENABLED=false` by default for local development.
+2. **CAPTCHA** needs Google reCAPTCHA v2 keys in `.env` (see *CAPTCHA*). Without keys it stays off.
 
 3. **KYC document storage** uses the local filesystem in the container volume. For production, migrate `storeFile()` in `KycService.java` to Azure Blob Storage or AWS S3 using the existing `storageReference` abstraction.
 
