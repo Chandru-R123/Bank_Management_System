@@ -336,6 +336,7 @@ Schema is managed by `spring.jpa.hibernate.ddl-auto=update` — Hibernate safely
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `SEED_SAMPLE_DATA` | `true` | Seed demo customers/accounts/transactions on first start |
+| `BACKFILL_CUSTOMER_LOGINS` | `true` | At startup, give every customer with an email a Keycloak login so "Forgot password" can email them |
 | `KYC_PROVIDER` | `MANUAL` | `MANUAL` \| `DIGILOCKER` \| `MOCK` |
 | `KYC_UPLOAD_DIR` | `./kyc-uploads` | Document storage path |
 | `DIGILOCKER_CLIENT_ID` | — | DigiLocker OAuth client id |
@@ -425,6 +426,8 @@ Import `postman/State-Bank.postman_collection.json` into Postman.
 4. **No Flyway/Liquibase migrations** — schema is managed by `ddl-auto=update`. Suitable for development; production deployments should adopt proper migration tooling.
 
 5. **Password/MFA** is fully delegated to Keycloak. Forgot password, password reset, MFA, session management, and device tracking are handled by the Keycloak admin console and the account portal at `/auth/realms/bank-management/account`.
+
+   Keycloak's **Forgot password** only emails users that exist in Keycloak (and shows the same success message when nobody matches). So every customer gets a login: new branch customers get one when they are created, and `CustomerLoginBackfill` links or creates logins for existing customers at startup (no password, so they set it through Forgot password; demo customers get `Customer@1234`). Changing a customer's email also changes their login email. Check the backend log for `Login backfill: N logins created, N linked, N skipped`.
 
 ---
 

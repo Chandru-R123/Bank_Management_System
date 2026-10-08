@@ -33,11 +33,14 @@ public class CustomerService {
 
     private final CustomerRepository customerRepository;
     private final AccountRepository  accountRepository;
+    private final OnlineBankingService onlineBanking;
 
     public CustomerService(CustomerRepository customerRepository,
-                           AccountRepository accountRepository) {
+                           AccountRepository accountRepository,
+                           OnlineBankingService onlineBanking) {
         this.customerRepository = customerRepository;
         this.accountRepository  = accountRepository;
+        this.onlineBanking      = onlineBanking;
     }
 
     // ── STAFF: create ──────────────────────────────────────────────────
@@ -105,6 +108,10 @@ public class CustomerService {
         String email = normaliseEmail(request.getEmail());
         if (customerRepository.existsByEmailIgnoreCaseAndCustomerIdNot(email, id)) {
             throw new DuplicateEmailException("Another customer already uses this email");
+        }
+        if (!email.equalsIgnoreCase(customer.getEmail())) {
+            // Keep the login email in step, or "Forgot password" with the new email finds nobody
+            onlineBanking.updateLoginEmail(customer, email);
         }
         apply(customer, request, email);
         return ResponseMapper.toResponse(customerRepository.save(customer));

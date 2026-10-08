@@ -336,13 +336,11 @@ export function openCustomerForm(existing: Customer | null, onSave: () => void) 
           <div class="field-error" data-error></div>
         </div>
         ${!isEdit ? `
-        <label class="callout callout-info" style="cursor:pointer">
-          <input type="checkbox" id="cf-online" checked style="width:18px;height:18px;margin-top:1px" />
-          <div><strong>Create an online banking login</strong><br/>
+        <div class="callout callout-info">${icon('key', 16)}<div><strong>An online banking login is created automatically</strong><br/>
             No password is set here. The customer gets an email with a link to choose their own password
-            (username = their email). Without a login, "Forgot password" cannot work for them.</div>
-        </label>` : ''}
-        ${isEdit && existing.onlineBanking ? `<div class="callout callout-info">${icon('info', 16)}<div>This customer signs in with online banking. Changing the email here does not change their login email.</div></div>` : ''}
+            (username = their email), and can use "Forgot password" at any time.</div>
+        </div>` : ''}
+        ${isEdit && existing.onlineBanking ? `<div class="callout callout-info">${icon('info', 16)}<div>This customer signs in with online banking. Changing the email here also changes their login email.</div></div>` : ''}
       </form>`,
     footer: `
       <button class="btn btn-secondary" data-close>Cancel</button>
@@ -382,18 +380,13 @@ export function openCustomerForm(existing: Customer | null, onSave: () => void) 
         toast('Customer details updated', 'success');
       } else {
         const created = await customers.create(data);
-        const wantsLogin = root.querySelector<HTMLInputElement>('#cf-online')?.checked;
-        if (wantsLogin) {
-          try {
-            const r = await customers.enableOnlineBanking(created.customerId);
-            toast(`${created.name} added as customer #${created.customerId}. ${r.message}`, r.emailSent ? 'success' : 'info');
-          } catch (err) {
-            // The customer record exists — only the login step failed; it can be retried from the drawer
-            toast(`${created.name} was added, but the online banking login failed: ${errorMessage(err)}. `
-              + 'Open the customer and click "Enable online banking" to retry.', 'error');
-          }
-        } else {
-          toast(`${created.name} added as customer #${created.customerId}`, 'success');
+        try {
+          const r = await customers.enableOnlineBanking(created.customerId);
+          toast(`${created.name} added as customer #${created.customerId}. ${r.message}`, r.emailSent ? 'success' : 'info');
+        } catch (err) {
+          // The customer record exists — only the login step failed; it can be retried from the drawer
+          toast(`${created.name} was added, but the online banking login failed: ${errorMessage(err)}. `
+            + 'Open the customer and click "Enable online banking" to retry.', 'error');
         }
       }
       m.close();
