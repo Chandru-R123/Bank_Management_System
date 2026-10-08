@@ -39,7 +39,7 @@ public class CustomerController {
     // ── STAFF: online-banking login for a branch customer ──────────────
 
     /** Creates the Keycloak login (username = email) and emails a "set password" link. */
-    @PreAuthorize(Roles.CUSTOMER_MANAGERS)
+    @PreAuthorize(Roles.ADMIN)
     @PostMapping("/{id}/online-banking")
     public ActionResponse<CustomerResponse> enableOnlineBanking(@PathVariable Long id,
                                                                 @AuthenticationPrincipal Jwt jwt) {
@@ -47,13 +47,13 @@ public class CustomerController {
     }
 
     /** Emails a "reset your password" link to a customer who already has online banking. */
-    @PreAuthorize(Roles.CUSTOMER_MANAGERS)
+    @PreAuthorize(Roles.ADMIN)
     @PostMapping("/{id}/online-banking/password-email")
     public ActionResponse<CustomerResponse> sendPasswordEmail(@PathVariable Long id) {
         return onlineBankingService.sendPasswordEmail(id);
     }
 
-    // ── STAFF: create ──────────────────────────────────────────────────
+    // ── ADMIN + EMPLOYEE: create customer ──────────────────────────────
 
     @PreAuthorize(Roles.CUSTOMER_MANAGERS)
     @PostMapping

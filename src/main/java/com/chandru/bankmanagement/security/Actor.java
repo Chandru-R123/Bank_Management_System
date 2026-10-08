@@ -21,11 +21,13 @@ public record Actor(String sub, String username, boolean admin, boolean staff,
                     boolean maker, boolean checker, boolean employee, boolean tpp) {
 
     /**
-     * Money movement: Customers must own the account; staff makers can operate on any account.
-     * Pure CHECKER, EMPLOYEE, and TPP require ownership (they cannot move money on arbitrary accounts).
+     * Money movement: only ADMIN can operate on any account directly.
+     * CUSTOMER, EMPLOYEE, MAKER, CHECKER, and TPP all require ownership.
+     * (MAKER and EMPLOYEE are already blocked at the controller level by @PreAuthorize;
+     *  this is a defence-in-depth guard at the service layer.)
      */
     public boolean requiresOwnership() {
-        return !maker && !admin;
+        return !admin;
     }
 
     /** True if this actor has the MAKER role (ADMIN also returns true for backward compat). */

@@ -43,8 +43,9 @@ import static com.chandru.bankmanagement.service.ResponseMapper.rupees;
  *  - FIXED_DEPOSIT accounts accept no top-ups and no withdrawals;
  *    funds are released only by closing the deposit.
  *  - Customers are limited per transaction and per day on debits.
- *  - Customers may only debit accounts they own; staff (ADMIN/EMPLOYEE) may
- *    operate on any account. Freezing and closing is ADMIN only (controller).
+ *  - Only ADMIN can debit/credit accounts they don't own; CUSTOMER can only
+ *    operate on their own accounts. EMPLOYEE, MAKER, and CHECKER are blocked
+ *    from deposit/withdraw/transfer at the controller level (@PreAuthorize).
  */
 @Service
 public class AccountService {
@@ -402,7 +403,7 @@ public class AccountService {
         }
     }
 
-    /** Customers may only operate on their own accounts. */
+    /** Only ADMIN can operate on accounts they don't own; everyone else must be the account owner. */
     private void ensureOwner(Account account, Actor actor) {
         if (!actor.requiresOwnership()) return;
         Customer owner = account.getCustomer();
