@@ -61,7 +61,10 @@ services:
 
   # ── Keycloak ────────────────────────────────────────────────────────────────
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.4
+    # Keycloak 24.0.4 + the reCAPTCHA login plugin (keycloak/recaptcha-login)
+    build:
+      context: .
+      dockerfile: keycloak/Dockerfile
     container_name: bank-keycloak
     command: start-dev --import-realm
     environment:
@@ -81,6 +84,10 @@ services:
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
       KC_LOG_LEVEL: INFO
+      # Google reCAPTCHA v2 for the login page (from .env; off when keys are empty)
+      CAPTCHA_ENABLED: ${CAPTCHA_ENABLED:-true}
+      CAPTCHA_SITE_KEY: ${CAPTCHA_SITE_KEY:-}
+      CAPTCHA_SECRET_KEY: ${CAPTCHA_SECRET_KEY:-}
     volumes:
       - ./keycloak/bank-management-realm.json:/opt/keycloak/data/import/bank-management-realm.json:ro
       - ./keycloak/themes/bank:/opt/keycloak/themes/bank:ro

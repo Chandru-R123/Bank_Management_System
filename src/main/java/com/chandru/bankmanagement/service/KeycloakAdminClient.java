@@ -260,6 +260,45 @@ public class KeycloakAdminClient {
                 new HttpEntity<>(config, json(token)), Void.class), "update an authenticator config");
     }
 
+    /** Ids of all authenticators installed in Keycloak (built-in and plugins). */
+    public List<String> authenticatorProviderIds(String token) {
+        List<Map<String, Object>> list = call(() -> get(token,
+                uri("/authentication/authenticator-providers").build().toUri(), LIST_OF_MAPS),
+                "list authenticators");
+        return list == null ? List.of() : list.stream().map(p -> String.valueOf(p.get("id"))).toList();
+    }
+
+    /** Aliases of the realm's top-level authentication flows. */
+    public List<String> flowAliases(String token) {
+        List<Map<String, Object>> list = call(() -> get(token,
+                uri("/authentication/flows").build().toUri(), LIST_OF_MAPS), "list flows");
+        return list == null ? List.of() : list.stream().map(f -> String.valueOf(f.get("alias"))).toList();
+    }
+
+    public void copyFlow(String token, String flowAlias, String newName) {
+        URI uri = uri("").pathSegment("authentication", "flows", flowAlias, "copy").build().encode().toUri();
+        call(() -> rest.exchange(uri, HttpMethod.POST,
+                new HttpEntity<>(Map.of("newName", newName), json(token)), Void.class), "copy the " + flowAlias + " flow");
+    }
+
+    /** Adds an authenticator (by provider id) at the end of a flow or sub-flow. */
+    public void addExecution(String token, String flowAlias, String providerId) {
+        URI uri = uri("").pathSegment("authentication", "flows", flowAlias, "executions", "execution")
+                .build().encode().toUri();
+        call(() -> rest.exchange(uri, HttpMethod.POST,
+                new HttpEntity<>(Map.of("provider", providerId), json(token)), Void.class), "add a login step");
+    }
+
+    public void deleteExecution(String token, String executionId) {
+        call(() -> rest.exchange(uri("/authentication/executions/" + executionId).build().toUri(),
+                HttpMethod.DELETE, new HttpEntity<>(json(token)), Void.class), "remove a login step");
+    }
+
+    public void raiseExecutionPriority(String token, String executionId) {
+        call(() -> rest.exchange(uri("/authentication/executions/" + executionId + "/raise-priority").build().toUri(),
+                HttpMethod.POST, new HttpEntity<>(json(token)), Void.class), "reorder a login step");
+    }
+
     /** Attaches a new config ({alias, config}) to an execution. */
     public void createExecutionConfig(String token, String executionId, Map<String, Object> config) {
         call(() -> rest.exchange(uri("/authentication/executions/" + executionId + "/config").build().toUri(),

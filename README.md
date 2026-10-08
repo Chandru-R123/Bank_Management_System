@@ -7,7 +7,7 @@ A full-stack **Mini Banking + Open Banking Consent Management** system demonstra
 - Manual KYC document review with a real DigiLocker abstraction layer
 - Open Banking consent management (UK-style account information)
 - Centralised audit logging
-- CAPTCHA-protected customer registration
+- CAPTCHA-protected login and customer registration (Google reCAPTCHA v2)
 - Keycloak 24 OAuth2/OIDC with PKCE
 
 ---
@@ -279,12 +279,13 @@ Development/testing stub only. Auto-verifies without documents. Clearly labelled
    CAPTCHA_SITE_KEY=<your-site-key>
    CAPTCHA_SECRET_KEY=<your-secret-key>
    ```
-3. `docker compose up -d --build backend nginx`
+3. `docker compose up -d --build` (rebuilds Keycloak too, which compiles the login plugin)
 
 CAPTCHA is **on when both keys are set** (`CAPTCHA_ENABLED=false` switches it off). Without keys everything works without CAPTCHA.
 
 Where it is used:
-- **Keycloak register page.** At every start the backend (`KeycloakCaptchaSync`) writes the keys into the realm's registration flow, sets the reCAPTCHA step to REQUIRED, and allows Google's iframe in Keycloak's Content-Security-Policy. This works on an existing Keycloak volume too, and no keys are kept in the realm file. Check the backend log for `reCAPTCHA sync: registration page CAPTCHA is ON`.
+- **Keycloak login page.** Keycloak 24 has no login CAPTCHA of its own, so the project adds a small Keycloak plugin (`keycloak/recaptcha-login`, compiled inside `keycloak/Dockerfile`, no local Maven needed). It is the standard username/password form plus a server-side check of Google's token, so it cannot be skipped by posting the form directly. The theme script `js/login-recaptcha.js` shows the checkbox. At startup the backend copies the built-in `browser` flow to `browser with recaptcha`, swaps in the plugin's form and makes it the realm's login flow. Check the backend log for `reCAPTCHA sync: login page CAPTCHA is ON`.
+- **Keycloak register page.** At every start the backend (`KeycloakCaptchaSync`) writes the keys into the realm's registration flow, sets the reCAPTCHA step to REQUIRED, and allows Google's iframe in Keycloak's Content-Security-Policy. This works on an existing Keycloak volume too, and no keys are kept in the realm file. Check the backend log for `reCAPTCHA sync: register page CAPTCHA is ON`.
 - **Customer profile update.** The token is sent in the `X-Captcha-Token` header of `PUT /api/customers/me` and checked by the backend together with the update, so it cannot be bypassed.
 
 The browser gets the site key from `GET /api/captcha/config` at runtime, so changing keys needs only a backend restart. The secret key never leaves the backend.
