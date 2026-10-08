@@ -127,7 +127,8 @@ export function isChecker(): boolean {
 /** May move money directly: ADMIN, or a CUSTOMER on their own accounts.
  *  MAKER staff never move money directly — they raise a request for a Checker (see canRaiseRequests). */
 export function canTransact(): boolean {
-  return hasRole('ADMIN') || hasRole('CUSTOMER');
+  // A staff role always wins over CUSTOMER (same rule as the backend)
+  return hasRole('ADMIN') || (hasRole('CUSTOMER') && !isStaff());
 }
 
 /** Staff who initiate deposits / withdrawals / transfers as Maker–Checker requests. */

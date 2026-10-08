@@ -92,6 +92,7 @@ public class StaffService {
 
         String id = keycloak.createUser(token, rep);
         keycloak.addRealmRoles(token, id, roles);
+        removeCustomerAccess(token, id);
         log.info("Staff login '{}' created with roles {} by {}", username, roles, actor.username());
 
         boolean emailSent = false;
@@ -125,6 +126,7 @@ public class StaffService {
         List<String> remove = current.stream().filter(r -> !wanted.contains(r)).toList();
         keycloak.addRealmRoles(token, id, add);
         keycloak.removeRealmRoles(token, id, remove);
+        removeCustomerAccess(token, id);
         log.info("Staff {} roles changed {} → {} by {}", id, current, wanted, actor.username());
         return toResponse(keycloak.getUser(token, id), new TreeSet<>(wanted));
     }
@@ -166,6 +168,31 @@ public class StaffService {
         keycloak.setPassword(token, id, password, true);
         return new ActionResponse<>(toResponse(keycloak.getUser(token, id), roles), false,
                 "Temporary password set — it must be changed at next sign-in.");
+    }
+
+    // ── customer access ────────────────────────────────────────────────
+
+    /**
+     * The realm's default roles include CUSTOMER (so people who sign up on the
+     * register page can bank online), and Keycloak gives the default roles to
+     * EVERY user created through the Admin API — new staff included. That made
+     * a new employee/maker/checker a "customer" as well, with deposit, withdraw
+     * and transfer buttons. Seeded staff come from the realm import with exact
+     * roles, which is why only staff created from the Staff page were affected.
+     *
+     * Removes CUSTOMER and the default-roles composite from a staff login.
+     */
+    public void removeCustomerAccess(String token, String id) {
+        List<String> extra = keycloak.realmRoleNames(token, id).stream()
+                .filter(StaffService::isCustomerAccessRole)
+                .toList();
+        if (extra.isEmpty()) return;
+        keycloak.removeRealmRoles(token, id, extra);
+        log.info("Staff {}: removed customer roles {}", id, extra);
+    }
+
+    static boolean isCustomerAccessRole(String role) {
+        return "CUSTOMER".equals(role) || role.startsWith("default-roles-");
     }
 
     // ── helpers ────────────────────────────────────────────────────────

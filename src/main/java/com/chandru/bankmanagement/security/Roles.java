@@ -25,8 +25,13 @@ public final class Roles {
      * account, CUSTOMER on their own. MAKER is intentionally NOT included —
      * makers only initiate requests through /api/transaction-requests, which
      * a CHECKER must approve.
+     *
+     * A staff role always wins over CUSTOMER, so an EMPLOYEE / MAKER / CHECKER
+     * login that also carries CUSTOMER (e.g. from the realm's default roles)
+     * still cannot move money directly.
      */
-    public static final String CUSTOMER_TRANSACTORS = "hasAnyRole('ADMIN', 'CUSTOMER')";
+    public static final String CUSTOMER_TRANSACTORS =
+            "hasRole('ADMIN') or (hasRole('CUSTOMER') and !hasAnyRole('EMPLOYEE', 'MAKER', 'CHECKER'))";
 
     /** Verification actions — approve/reject Maker requests, beneficiaries, consents. */
     public static final String CHECKERS = "hasAnyRole('ADMIN', 'CHECKER')";

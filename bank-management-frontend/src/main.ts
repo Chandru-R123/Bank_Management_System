@@ -1,7 +1,7 @@
 import './style.css';
 import keycloak from './keycloak';
 import {
-  customers, getDisplayName, getRoleLabel, hasRole,
+  customers, getDisplayName, getRoleLabel, getRoles, hasRole,
   isAdmin, isStaff, isTpp, isMaker, isChecker, canReviewKyc,
 } from './api';
 import { icon } from './icons';
@@ -155,6 +155,7 @@ keycloak
         keycloak.logout();
       });
     }, 30_000);
+    watchRoleChanges();
 
     if (hasRole('CUSTOMER') && !isStaff() && !isTpp()) {
       try { await customers.sync(); } catch (err) {
@@ -179,6 +180,41 @@ keycloak
         </div>
       </div>`;
   });
+
+// ── Live role changes ─────────────────────────────────────────────────────────
+
+function roleSignature(): string {
+  return [...getRoles()].sort().join(',');
+}
+
+/**
+ * Menu, pages and buttons (deposit / withdraw / transfer …) all follow the
+ * roles in the access token. Tokens live an hour, so when an admin changes
+ * this user's roles on the Staff page nothing would change until then.
+ * Refresh the token every minute and whenever the tab gets focus; if the
+ * roles differ, rebuild the shell and re-render the page.
+ */
+function watchRoleChanges() {
+  let current = roleSignature();
+  keycloak.onAuthRefreshSuccess = () => {
+    const next = roleSignature();
+    if (next === current) return;
+    current = next;
+    buildShell();
+    void route();
+    toast('Your access was updated by an administrator', 'info');
+  };
+
+  let lastForced = 0;
+  const forceRefresh = () => {
+    if (Date.now() - lastForced < 10_000) return;
+    lastForced = Date.now();
+    // Failures are ignored here; the 30-second check above handles ended sessions
+    keycloak.updateToken(-1).catch(() => undefined);
+  };
+  setInterval(forceRefresh, 60_000);
+  window.addEventListener('focus', forceRefresh);
+}
 
 // ── Shell ─────────────────────────────────────────────────────────────────────
 
